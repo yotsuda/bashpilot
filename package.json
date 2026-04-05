@@ -1,0 +1,48 @@
+{
+  "name": "bash-mcp",
+  "version": "0.1.0",
+  "description": "Shared console MCP server for bash - AI and user work in the same terminal",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "bash-mcp": "src/index.js"
+  },
+  "files": [
+    "src/",
+    "shell-integration.bash",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "bash",
+    "terminal",
+    "ai",
+    "shared-console",
+    "shell",
+    "model-context-protocol",
+    "claude",
+    "copilot"
+  ],
+  "author": "Yoshifumi Tsuda",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yotsuda/bash-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yotsuda/bash-mcp/issues"
+  },
+  "homepage": "https://github.com/yotsuda/bash-mcp#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "express": "^5.1.0",
+    "node-pty": "^1.0.0"
+  }
+}
