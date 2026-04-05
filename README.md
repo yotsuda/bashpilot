@@ -1,10 +1,10 @@
-# bash-mcp
+# bashpilot
 
 Shared console MCP server for bash. AI and user work in the same terminal session.
 
 ## What This Does
 
-When you run `bash-mcp`, it opens a bash terminal. You type commands as usual. When an AI assistant sends commands via MCP, they appear in the same terminal — you see every command and its output in real time.
+When you run `bashpilot`, it opens a bash terminal. You type commands as usual. When an AI assistant sends commands via MCP, they appear in the same terminal — you see every command and its output in real time.
 
 This is the same "shared console" concept as [PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP), implemented for bash using [VS Code's shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) approach (OSC 633 escape sequences).
 
@@ -23,7 +23,7 @@ This is the same "shared console" concept as [PowerShell.MCP](https://github.com
         │ stdin             ▲ stdout
         ▼                   │
   ┌─────────────────────────────────────┐
-  │         bash-mcp process            │
+  │         bashpilot process            │
   │                                     │
   │  ┌──────────┐    ┌──────────────┐   │
   │  │ PTY      │◄──►│ bash         │   │
@@ -52,13 +52,13 @@ This is the same "shared console" concept as [PowerShell.MCP](https://github.com
 ## Quick Start
 
 ```bash
-npm install -g bash-mcp
-bash-mcp
+npm install -g bashpilot
+bashpilot
 ```
 
 Or run directly with npx:
 ```bash
-npx bash-mcp
+npx bashpilot
 ```
 
 MCP server starts on `http://localhost:8818/sse` by default.
@@ -66,15 +66,15 @@ MCP server starts on `http://localhost:8818/sse` by default.
 ### Register with Claude Code
 
 ```bash
-claude mcp add --transport sse bash-mcp http://localhost:8818/sse
+claude mcp add --transport sse bashpilot http://localhost:8818/sse
 ```
 
-Then start `bash-mcp` in a terminal window and use Claude Code as usual. AI commands will appear in the bash-mcp terminal.
+Then start `bashpilot` in a terminal window and use Claude Code as usual. AI commands will appear in the bashpilot terminal.
 
 ## Options
 
 ```
-bash-mcp [options]
+bashpilot [options]
 
   --port PORT    MCP server port (default: 8818)
   --shell SHELL  Shell to use (default: $SHELL or bash)
@@ -84,7 +84,7 @@ bash-mcp [options]
 
 The key insight comes from VS Code's shell integration: inject [OSC 633](https://code.visualstudio.com/docs/terminal/shell-integration#_supported-escape-sequences) escape sequences into bash's prompt to track command lifecycle without modifying bash itself.
 
-1. **Shell integration injection**: On startup, bash-mcp sources a small script that hooks into `PROMPT_COMMAND` and the `DEBUG` trap to emit OSC 633 markers:
+1. **Shell integration injection**: On startup, bashpilot sources a small script that hooks into `PROMPT_COMMAND` and the `DEBUG` trap to emit OSC 633 markers:
    - `OSC 633;C` — Command is about to execute
    - `OSC 633;D;N` — Command finished with exit code N
    - `OSC 633;A` — Prompt is being displayed
@@ -106,7 +106,7 @@ The key insight comes from VS Code's shell integration: inject [OSC 633](https:/
 - Only one AI command can execute at a time (commands are serialized)
 - Very long output (>1MB) is truncated
 - Interactive commands (vi, top, etc.) are not supported via MCP
-- The user must keep the bash-mcp terminal window open
+- The user must keep the bashpilot terminal window open
 
 ## License
 

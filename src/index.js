@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * bash-mcp - Shared console MCP server for bash
+ * bashpilot - Shared console MCP server for bash
  *
  * Launches an interactive bash session that both the user and AI can use.
  * The user types in the terminal as normal.
@@ -51,7 +51,7 @@ async function main() {
 
     // Print banner to stderr (so it doesn't interfere with terminal output)
     process.stderr.write(
-        `\x1b[90m[bash-mcp] MCP server listening on http://localhost:${addr.port}/sse\x1b[0m\n`
+        `\x1b[90m[bashpilot] MCP server listening on http://localhost:${addr.port}/sse\x1b[0m\n`
     );
 
     // Start the terminal (this sets up stdin/stdout forwarding)

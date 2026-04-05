@@ -15,7 +15,7 @@ import { z } from 'zod';
 
 function createMcpServer(ptyManager) {
     const server = new McpServer({
-        name: 'bash-mcp',
+        name: 'bashpilot',
         version: '0.1.0',
     });
 

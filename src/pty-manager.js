@@ -41,7 +41,7 @@ export class PtyManager {
             cwd: this.cwd,
             env: {
                 ...process.env,
-                BASH_MCP_ACTIVE: '1'
+                BASHPILOT_ACTIVE: '1'
             }
         });
 
@@ -130,7 +130,7 @@ export class PtyManager {
         const scriptPath = join(__dirname, '..', 'shell-integration.bash');
         const script = readFileSync(scriptPath, 'utf8');
 
-        const tmpFile = '/tmp/.bash-mcp-integration-' + process.pid + '.sh';
+        const tmpFile = '/tmp/.bashpilot-integration-' + process.pid + '.sh';
 
         // Write heredoc to temp file, source it, remove it, clear screen
         const injection = [

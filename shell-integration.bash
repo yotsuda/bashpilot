@@ -1,6 +1,6 @@
-# bash-mcp shell integration
+# bashpilot shell integration
 # Injects OSC 633 escape sequences for command lifecycle tracking.
-# Sourced automatically by bash-mcp when launching bash.
+# Sourced automatically by bashpilot when launching bash.
 
 # Guard against double-sourcing
 if [[ "$__BASH_MCP_INJECTED" == "1" ]]; then

@@ -1,11 +1,11 @@
 {
-  "name": "bash-mcp",
+  "name": "bashpilot",
   "version": "0.1.0",
   "description": "Shared console MCP server for bash - AI and user work in the same terminal",
   "type": "module",
   "main": "src/index.js",
   "bin": {
-    "bash-mcp": "src/index.js"
+    "bashpilot": "src/index.js"
   },
   "files": [
     "src/",
@@ -31,12 +31,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/yotsuda/bash-mcp.git"
+    "url": "git+https://github.com/yotsuda/bashpilot.git"
   },
   "bugs": {
-    "url": "https://github.com/yotsuda/bash-mcp/issues"
+    "url": "https://github.com/yotsuda/bashpilot/issues"
   },
-  "homepage": "https://github.com/yotsuda/bash-mcp#readme",
+  "homepage": "https://github.com/yotsuda/bashpilot#readme",
   "engines": {
     "node": ">=18.0.0"
   },
