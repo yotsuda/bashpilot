@@ -36,6 +36,9 @@ __bash_mcp_precmd() {
     if [[ -n "$__bash_mcp_original_prompt_command" ]]; then
         eval "$__bash_mcp_original_prompt_command"
     fi
+
+    # Override window title
+    printf '\e]0;bashpilot — %s\a' "${PWD/#$HOME/\~}"
 }
 
 # Called after prompt, before command execution (via DEBUG trap)
@@ -50,6 +53,12 @@ __bash_mcp_preexec() {
     __bash_mcp_osc "C"
     __bash_mcp_in_command=1
 }
+
+# Override MSYS/Git Bash title prefix
+TITLEPREFIX="bashpilot"
+
+# Remove title-setting escape sequences from PS1 so our precmd title wins
+PS1="${PS1//\\[\\033\]0;*\\007\\]/}"
 
 # Install hooks
 PROMPT_COMMAND="__bash_mcp_precmd"

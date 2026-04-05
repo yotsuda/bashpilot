@@ -1,37 +1,61 @@
 /**
- * MCP server exposing bash terminal tools via HTTP+SSE transport.
+ * MCP server (stdio transport) with start_console and execute_command tools.
  *
- * Each SSE connection gets its own McpServer instance because the SDK
- * requires one transport per server.
- *
- * Tools:
- *   execute_command - Run a command in the shared bash session
+ * Flow:
+ *   1. MCP client starts bashpilot via stdio
+ *   2. AI calls start_console → visible terminal window opens
+ *   3. AI calls execute_command → command runs in the visible terminal
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import express from 'express';
+import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { ConsoleManager } from './console-manager.js';
 
-function createMcpServer(ptyManager) {
+export async function startMcpServer() {
+    const consoleManager = new ConsoleManager();
+    await consoleManager.init();
+
     const server = new McpServer({
         name: 'bashpilot',
         version: '0.1.0',
     });
 
     server.tool(
+        'start_console',
+        'Open a visible bash terminal window. The user can see and type in this terminal. AI commands sent via execute_command will also appear here.',
+        {
+            shell: z.string().optional().describe('Shell to use (default: $SHELL or bash)'),
+            cwd: z.string().optional().describe('Working directory for the console'),
+        },
+        async ({ shell, cwd }) => {
+            try {
+                const result = await consoleManager.startConsole({ shell, cwd });
+                const msg = result.status === 'reused'
+                    ? `Console already open (PID ${result.pid}). Reusing existing session.`
+                    : `Console opened (PID ${result.pid}). The user can see the terminal window.`;
+                return { content: [{ type: 'text', text: msg }] };
+            } catch (err) {
+                return {
+                    content: [{ type: 'text', text: `Failed to start console: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
+    server.tool(
         'execute_command',
-        'Execute a command in the shared bash terminal. The command and its output are visible to the user in real time. Session state (cwd, env vars, functions) persists across calls.',
+        'Execute a command in the shared bash terminal. The command and its output are visible to the user in real time. Session state (cwd, env vars, functions) persists across calls. Call start_console first if no console is open.',
         {
             command: z.string().describe('The bash command to execute'),
             timeout_seconds: z.number().optional().default(30).describe('Timeout in seconds (default: 30)')
         },
         async ({ command, timeout_seconds }) => {
             try {
-                const result = await ptyManager.executeCommand(command, timeout_seconds * 1000);
-                const text = result.output || '(no output)';
+                const result = await consoleManager.executeCommand(command, timeout_seconds * 1000);
                 return {
-                    content: [{ type: 'text', text }],
+                    content: [{ type: 'text', text: result.output || '(no output)' }],
                     metadata: { exitCode: result.exitCode }
                 };
             } catch (err) {
@@ -43,41 +67,10 @@ function createMcpServer(ptyManager) {
         }
     );
 
-    return server;
-}
+    const transport = new StdioServerTransport();
+    await server.connect(transport);
 
-/**
- * Start the MCP HTTP+SSE server on the given port.
- */
-export async function startMcpHttpServer(ptyManager, port) {
-    const app = express();
-
-    const transports = {};
-
-    app.get('/sse', async (req, res) => {
-        const server = createMcpServer(ptyManager);
-        const transport = new SSEServerTransport('/messages', res);
-        transports[transport.sessionId] = transport;
-        res.on('close', () => {
-            delete transports[transport.sessionId];
-            server.close().catch(() => {});
-        });
-        await server.connect(transport);
-    });
-
-    app.post('/messages', async (req, res) => {
-        const sessionId = req.query.sessionId;
-        const transport = transports[sessionId];
-        if (transport) {
-            await transport.handlePostMessage(req, res);
-        } else {
-            res.status(400).json({ error: 'Unknown session' });
-        }
-    });
-
-    return new Promise((resolve) => {
-        const httpServer = app.listen(port, () => {
-            resolve(httpServer);
-        });
-    });
+    // Cleanup on exit
+    process.on('SIGINT', () => consoleManager.dispose());
+    process.on('SIGTERM', () => consoleManager.dispose());
 }
