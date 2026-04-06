@@ -102,6 +102,33 @@ export function enumerateSockets(proxyPid, agentId) {
 }
 
 /**
+ * Enumerate unowned socket/port files (bashpilot.{pid}.sock only).
+ */
+export function enumerateUnownedSockets() {
+    const dir = getSocketDir();
+    const ext = IS_WINDOWS ? '.port' : '.sock';
+    const results = [];
+
+    let files;
+    try {
+        files = readdirSync(dir);
+    } catch {
+        return results;
+    }
+
+    for (const file of files) {
+        if (!file.startsWith(PREFIX + '.')) continue;
+        if (!file.endsWith(ext)) continue;
+        const parsed = parseSocketPath(file);
+        if (parsed && !parsed.owned) {
+            results.push(join(dir, file));
+        }
+    }
+
+    return results;
+}
+
+/**
  * Remove a stale socket/port file.
  */
 export function cleanupSocket(socketPath) {

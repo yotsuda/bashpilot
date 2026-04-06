@@ -13,7 +13,7 @@ import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { launchConsole } from './console-launcher.js';
 import { generateDisplayName, nextConsoleName } from './console-names.js';
-import { enumerateSockets, parseSocketPath, cleanupSocket, getSocketPath, readPortFile, usesTcp } from './socket-paths.js';
+import { enumerateSockets, enumerateUnownedSockets, parseSocketPath, cleanupSocket, getSocketPath, readPortFile, usesTcp } from './socket-paths.js';
 
 export class ConsoleManager {
     constructor() {
@@ -351,6 +351,62 @@ export class ConsoleManager {
                 return { consolePid: parsed.consolePid, socketPath };
             } else {
                 this._busyPids.add(parsed.consolePid);
+            }
+        }
+
+        // Check unowned consoles
+        const unownedSockets = enumerateUnownedSockets();
+        for (const socketPath of unownedSockets) {
+            const parsed = parseSocketPath(socketPath);
+            if (!parsed) continue;
+
+            const status = await this._getStatus(socketPath);
+            if (!status) {
+                cleanupSocket(socketPath);
+                continue;
+            }
+
+            if (status.status === 'standby') {
+                // Claim this unowned console
+                const claimed = await this._claimConsole(socketPath, parsed.consolePid);
+                if (claimed) return claimed;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Claim an unowned console. Sends claim message, polls for new owned socket.
+     * Returns { consolePid, socketPath } or null on failure.
+     */
+    async _claimConsole(unownedSocketPath, consolePid) {
+        // Fire-and-forget claim request (socket may close during rename)
+        this._sendRequest(unownedSocketPath, {
+            type: 'claim',
+            proxyPid: this._proxyPid,
+            agentId: this._agentId,
+        }, 3000).catch(() => {});
+
+        // Calculate expected new socket path
+        const newSocketPath = getSocketPath(this._proxyPid, this._agentId, consolePid);
+
+        // Poll for new socket (20 retries x 100ms = 2 seconds)
+        for (let i = 0; i < 20; i++) {
+            await sleep(100);
+            const status = await this._getStatus(newSocketPath);
+            if (status) {
+                const displayName = generateDisplayName(consolePid);
+                this._consoles.set(consolePid, { socketPath: newSocketPath, displayName });
+                this._activePid = consolePid;
+
+                // Set window title
+                await this._sendRequest(newSocketPath, {
+                    type: 'set_title',
+                    title: `bashpilot ${displayName}`,
+                }).catch(() => {});
+
+                return { consolePid, socketPath: newSocketPath };
             }
         }
 
