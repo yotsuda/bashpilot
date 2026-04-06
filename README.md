@@ -60,6 +60,23 @@ npm install -g bashpilot
 claude mcp add bashpilot -- bashpilot
 ```
 
+### Claude Desktop
+
+Add to your config file (`%APPDATA%\Claude\claude_desktop_config.json` on Windows, `~/Library/Application Support/Claude/claude_desktop_config.json` on macOS):
+
+```json
+{
+  "mcpServers": {
+    "bashpilot": {
+      "command": "npx",
+      "args": ["bashpilot"]
+    }
+  }
+}
+```
+
+Restart Claude Desktop after saving.
+
 ## MCP Tools
 
 | Tool | Description |
