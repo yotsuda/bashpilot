@@ -12,7 +12,7 @@
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { launchConsole } from './console-launcher.js';
-import { generateDisplayName } from './console-names.js';
+import { generateDisplayName, nextConsoleName } from './console-names.js';
 import { enumerateSockets, parseSocketPath, cleanupSocket, getSocketPath, readPortFile, usesTcp } from './socket-paths.js';
 
 export class ConsoleManager {
@@ -51,10 +51,16 @@ export class ConsoleManager {
             }
         }
 
-        // Launch new console
+        // Pick a name before launch so it can be shown immediately
+        const consoleName = nextConsoleName();
+        const title = `bashpilot — ${consoleName}`;
+
+        // Launch new console with title and banner as args (shown immediately)
         launchConsole(this._proxyPid, this._agentId, {
             shell: options.shell,
             cwd: options.cwd,
+            banner: options.banner,
+            title,
         });
 
         // Wait for the new console's socket to appear
@@ -62,11 +68,12 @@ export class ConsoleManager {
         const parsed = parseSocketPath(socketPath);
         const consolePid = parsed.consolePid;
 
-        const displayName = generateDisplayName(consolePid);
+        // Now we know the PID — update title and register
+        const displayName = `#${consolePid} ${consoleName}`;
         this._consoles.set(consolePid, { socketPath, displayName });
         this._activePid = consolePid;
 
-        // Set window title
+        // Update title with PID
         await this._sendRequest(socketPath, {
             type: 'set_title',
             title: `bashpilot — ${displayName}`,

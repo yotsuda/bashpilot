@@ -9,6 +9,7 @@
  */
 
 import net from 'node:net';
+import os from 'node:os';
 import { PtyManager } from './pty-manager.js';
 import { getSocketPath, cleanupSocket, writePortFile, usesTcp } from './socket-paths.js';
 
@@ -25,6 +26,11 @@ export async function startConsole(options) {
     const pty = new PtyManager({
         shell: options.shell,
         cwd: options.cwd || process.cwd(),
+        onReady: () => {
+            if (options.title) {
+                process.stdout.write(`\x1b]0;${options.title}\x07`);
+            }
+        },
     });
 
     const server = net.createServer((socket) => {
@@ -133,47 +139,19 @@ async function handleMessage(msg, socket, pty) {
 }
 
 async function getLocationInfo(pty) {
-    // Collect system/session info by running a script in the bash PTY
-    const script = [
-        'echo "@@BASHPILOT_LOCATION_START@@"',
-        'echo "pwd:$(pwd)"',
-        'echo "user:$(whoami)"',
-        'echo "hostname:$(hostname)"',
-        'echo "shell:$BASH_VERSION"',
-        'echo "os:$(uname -s -r -m)"',
-        'echo "term:$TERM"',
-        'echo "lang:$LANG"',
-        'echo "@@BASHPILOT_LOCATION_END@@"',
-    ].join('; ');
+    // Get cwd silently from bash (not shown in console)
+    const cwdResult = await pty.executeSilent('pwd');
+    const cwd = cwdResult.output.trim() || process.cwd();
 
-    const result = await pty.executeCommand(script, 5000);
-    const lines = result.output.split('\n');
-
-    const info = {
-        current_directory: null,
-        user: null,
-        hostname: null,
-        bash_version: null,
-        os: null,
-        term: null,
-        lang: null,
+    return {
+        current_directory: cwd,
+        user: process.env.USER || process.env.USERNAME || '(unknown)',
+        hostname: os.hostname(),
+        bash_version: process.env.BASH_VERSION || '(unknown)',
+        os: `${os.type()} ${os.release()} ${os.arch()}`,
+        term: process.env.TERM || '(unknown)',
+        lang: process.env.LANG || '',
     };
-
-    for (const line of lines) {
-        const [key, ...rest] = line.split(':');
-        const value = rest.join(':');
-        switch (key) {
-            case 'pwd': info.current_directory = value; break;
-            case 'user': info.user = value; break;
-            case 'hostname': info.hostname = value; break;
-            case 'shell': info.bash_version = value; break;
-            case 'os': info.os = value; break;
-            case 'term': info.term = value; break;
-            case 'lang': info.lang = value; break;
-        }
-    }
-
-    return info;
 }
 
 function sendMessage(socket, obj) {

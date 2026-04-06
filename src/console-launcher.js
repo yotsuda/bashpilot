@@ -20,6 +20,7 @@ export function launchConsole(proxyPid, agentId, options = {}) {
     const args = [ENTRY, '--console', '--proxy-pid', String(proxyPid), '--agent-id', agentId];
     if (options.shell) args.push('--shell', options.shell);
     if (options.cwd) args.push('--cwd', options.cwd);
+    if (options.title) args.push('--title', options.title);
 
     const platform = process.platform;
 
@@ -38,15 +39,17 @@ function launchWindows(nodeCmd, args, cwd) {
     // not the MCP server's environment.
     const cmdline = [nodeCmd, ...args].map(a => `"${a}"`).join(' ');
 
+    const title = options.title || 'bashpilot';
+
     if (hasCommand('wt.exe')) {
-        return spawn('wt.exe', ['--title', 'bashpilot', '--', 'cmd', '/c', cmdline], {
+        return spawn('wt.exe', ['--title', title, '--', nodeCmd, ...args], {
             detached: true,
             stdio: 'ignore',
             cwd: cwd || undefined,
         });
     }
 
-    return spawn('cmd', ['/c', 'start', 'bashpilot', '/wait', 'cmd', '/k', cmdline], {
+    return spawn('cmd', ['/c', 'start', title, '/wait', nodeCmd, ...args], {
         detached: true,
         stdio: 'ignore',
         cwd: cwd || undefined,

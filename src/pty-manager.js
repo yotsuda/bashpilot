@@ -25,6 +25,10 @@ export class PtyManager {
         this.tracker = new CommandTracker();
         this._parser = new OscParser();
         this._pty = null;
+        this._silent = false;
+        this._onReady = options.onReady || null;
+        this._readyFired = false;
+        this._inputEnabled = false;
     }
 
     /**
@@ -56,6 +60,13 @@ export class PtyManager {
             // Feed events to tracker
             for (const event of events) {
                 this.tracker.handleEvent(event);
+
+                // Fire onReady on first promptStart (after shell integration injection)
+                if (!this._readyFired && event.type === 'promptStart') {
+                    this._readyFired = true;
+                    if (this._onReady) this._onReady();
+                    this._enableStdin();
+                }
             }
 
             // Feed cleaned output to tracker (for capture)
@@ -63,8 +74,8 @@ export class PtyManager {
                 this.tracker.feedOutput(cleaned);
             }
 
-            // Display to user
-            if (cleaned) {
+            // Display to user (suppressed during silent execution and during init)
+            if (cleaned && !this._silent && this._readyFired) {
                 process.stdout.write(cleaned);
             }
         });
@@ -74,14 +85,8 @@ export class PtyManager {
             process.exit(exitCode);
         });
 
-        // User stdin → PTY
-        if (process.stdin.isTTY) {
-            process.stdin.setRawMode(true);
-        }
-        process.stdin.resume();
-        process.stdin.on('data', (data) => {
-            this._pty.write(data.toString());
-        });
+        // User stdin → PTY (deferred until shell integration is ready)
+        this._setupStdin();
 
         // Handle terminal resize
         process.stdout.on('resize', () => {
@@ -132,16 +137,76 @@ export class PtyManager {
 
         const tmpFile = '/tmp/.bashpilot-integration-' + process.pid + '.sh';
 
-        // Write heredoc to temp file, source it, remove it, clear screen
+        // Shell integration: heredoc to temp file, source, remove
         const injection = [
             `cat > ${tmpFile} << 'BASH_MCP_EOF'`,
             script.trimEnd(),
             'BASH_MCP_EOF',
-            `source ${tmpFile}; rm -f ${tmpFile}; clear`,
+            `source ${tmpFile}; rm -f ${tmpFile}`,
             ''
         ].join('\n');
 
         this._pty.write(injection);
+    }
+
+    /**
+     * Prepare stdin (raw mode) but don't start forwarding yet.
+     */
+    _setupStdin() {
+        if (process.stdin.isTTY) {
+            process.stdin.setRawMode(true);
+        }
+        // Do NOT register .on('data') here — that auto-resumes the stream.
+    }
+
+    /**
+     * Start forwarding stdin to PTY. Called after shell integration is ready.
+     * Discards any input that was buffered during initialization, then
+     * clears bash's readline to prevent accidental command execution.
+     */
+    _enableStdin() {
+        // Drain buffered stdin (typed during init) by reading and discarding
+        const discard = () => {};
+        process.stdin.on('data', discard);
+        process.stdin.resume();
+
+        // Wait for buffer to drain, then clear bash readline and install real handler
+        setTimeout(() => {
+            process.stdin.removeListener('data', discard);
+
+            // Clear any characters that leaked into bash's readline
+            this._pty.write('\x15'); // Ctrl+U: kill line
+
+            setTimeout(() => {
+                this._inputEnabled = true;
+                process.stdin.on('data', (data) => {
+                    this._pty.write(data.toString());
+                });
+            }, 50);
+        }, 100);
+    }
+
+    /**
+     * Send raw input to the PTY (no tracking, no capture).
+     */
+    sendInput(text) {
+        if (this._pty) {
+            this._pty.write(text);
+        }
+    }
+
+    /**
+     * Execute a command silently (output not shown in console).
+     * Used for internal queries like pwd.
+     */
+    async executeSilent(command, timeoutMs = 5000) {
+        if (!this._pty) throw new Error('PTY not started');
+        this._silent = true;
+        try {
+            return await this.executeCommand(command, timeoutMs);
+        } finally {
+            this._silent = false;
+        }
     }
 
     /**

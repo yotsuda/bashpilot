@@ -9,7 +9,7 @@ export function parseArgs() {
         agentId: null,
         shell: null,
         cwd: null,
-        // Legacy (kept for backward compatibility during transition)
+        title: null,
         socket: null,
     };
 
@@ -23,6 +23,9 @@ export function parseArgs() {
                 break;
             case '--agent-id':
                 options.agentId = args[++i];
+                break;
+            case '--title':
+                options.title = args[++i];
                 break;
             case '--socket':
                 options.socket = args[++i];

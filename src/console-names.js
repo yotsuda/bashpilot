@@ -28,12 +28,20 @@ function ensureShuffled() {
 }
 
 /**
+ * Get the next console name (without PID).
+ * Returns something like "Falcon".
+ */
+export function nextConsoleName() {
+    ensureShuffled();
+    const name = NAMES[_index % NAMES.length];
+    _index++;
+    return name;
+}
+
+/**
  * Generate a display name for a console with the given PID.
  * Returns something like "#12345 Falcon".
  */
 export function generateDisplayName(pid) {
-    ensureShuffled();
-    const name = NAMES[_index % NAMES.length];
-    _index++;
-    return `#${pid} ${name}`;
+    return `#${pid} ${nextConsoleName()}`;
 }
