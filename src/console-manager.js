@@ -65,7 +65,7 @@ export class ConsoleManager {
                 // Re-set title on reuse (may have changed)
                 await this._sendRequest(standby.socketPath, {
                     type: 'set_title',
-                    title: `bashpilot — ${displayName}`,
+                    title: `bashpilot ${displayName}`,
                 }).catch(() => {});
                 return {
                     status: 'reused',
@@ -77,7 +77,7 @@ export class ConsoleManager {
 
         // Pick a name before launch so it can be shown immediately
         const consoleName = nextConsoleName();
-        const title = `bashpilot — ${consoleName}`;
+        const title = `bashpilot ${consoleName}`;
 
         // Launch new console with title and banner as args (shown immediately)
         launchConsole(this._proxyPid, this._agentId, {
@@ -100,7 +100,7 @@ export class ConsoleManager {
         // Update title with PID
         await this._sendRequest(socketPath, {
             type: 'set_title',
-            title: `bashpilot — ${displayName}`,
+            title: `bashpilot ${displayName}`,
         }).catch(() => {});
 
         return { status: 'started', pid: consolePid, displayName };
