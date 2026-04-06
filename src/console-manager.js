@@ -407,12 +407,7 @@ export class ConsoleManager {
                 this._consoles.set(consolePid, { socketPath: newSocketPath, displayName });
                 this._activePid = consolePid;
 
-                // Set window title
-                await this._sendRequest(newSocketPath, {
-                    type: 'set_title',
-                    title: `bashpilot ${displayName}`,
-                }).catch(() => {});
-
+                // Title is set by the caller (startConsole reuse path)
                 return { consolePid, socketPath: newSocketPath };
             }
         }
