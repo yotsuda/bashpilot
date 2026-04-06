@@ -166,6 +166,16 @@ export function registerFileTools(server) {
     );
 }
 
+// --- Response helpers ---
+
+function ok(text) {
+    return { content: [{ type: 'text', text }] };
+}
+
+function error(message) {
+    return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+}
+
 // --- Streaming file reader ---
 
 async function readLines(filePath, offset, limit) {
