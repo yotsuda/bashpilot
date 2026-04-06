@@ -58,7 +58,7 @@ export async function startMcpServer() {
                 if (result.switched) {
                     return {
                         content: [{ type: 'text', text: result.output }],
-                        metadata: { switched: true, cwd: result.cwd, displayName: result.displayName }
+                        metadata: { switched: true, displayName: result.displayName }
                     };
                 }
                 return {

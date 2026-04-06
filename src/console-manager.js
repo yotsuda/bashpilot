@@ -127,19 +127,11 @@ export class ConsoleManager {
 
             // Don't execute — notify caller of the switch
             const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
-            const cwdResult = await this._sendRequest(socketPath, {
-                type: 'execute',
-                id: randomUUID(),
-                command: 'pwd',
-                timeout: 5000,
-            }, 8000).catch(() => null);
-            const cwd = cwdResult?.output?.trim() || '(unknown)';
 
             return {
                 switched: true,
                 displayName,
-                cwd,
-                output: `Switched to console ${displayName}. Current directory: ${cwd}\nPipeline NOT executed — verify location and re-execute.`,
+                output: `Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
                 exitCode: 0,
             };
         }

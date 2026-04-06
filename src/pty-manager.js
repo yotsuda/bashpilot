@@ -25,7 +25,6 @@ export class PtyManager {
         this.tracker = new CommandTracker();
         this._parser = new OscParser();
         this._pty = null;
-        this._silent = false;
         this._onReady = options.onReady || null;
         this._readyFired = false;
         this._inputEnabled = false;
@@ -74,8 +73,8 @@ export class PtyManager {
                 this.tracker.feedOutput(cleaned);
             }
 
-            // Display to user (suppressed during silent execution and during init)
-            if (cleaned && !this._silent && this._readyFired) {
+            // Display to user (suppressed during init)
+            if (cleaned && this._readyFired) {
                 process.stdout.write(cleaned);
             }
         });
@@ -192,20 +191,6 @@ export class PtyManager {
     sendInput(text) {
         if (this._pty) {
             this._pty.write(text);
-        }
-    }
-
-    /**
-     * Execute a command silently (output not shown in console).
-     * Used for internal queries like pwd.
-     */
-    async executeSilent(command, timeoutMs = 5000) {
-        if (!this._pty) throw new Error('PTY not started');
-        this._silent = true;
-        try {
-            return await this.executeCommand(command, timeoutMs);
-        } finally {
-            this._silent = false;
         }
     }
 

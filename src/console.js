@@ -122,12 +122,7 @@ async function handleMessage(msg, socket, pty) {
         }
 
         case 'get_location': {
-            try {
-                const info = await getLocationInfo(pty);
-                sendMessage(socket, { type: 'location', location: info });
-            } catch (err) {
-                sendMessage(socket, { type: 'error', message: err.message });
-            }
+            sendMessage(socket, { type: 'location', location: getLocationInfo() });
             break;
         }
 
@@ -138,19 +133,11 @@ async function handleMessage(msg, socket, pty) {
     }
 }
 
-async function getLocationInfo(pty) {
-    // Get cwd silently from bash (not shown in console)
-    const cwdResult = await pty.executeSilent('pwd');
-    const cwd = cwdResult.output.trim() || process.cwd();
-
+function getLocationInfo() {
     return {
-        current_directory: cwd,
         user: process.env.USER || process.env.USERNAME || '(unknown)',
         hostname: os.hostname(),
-        bash_version: process.env.BASH_VERSION || '(unknown)',
         os: `${os.type()} ${os.release()} ${os.arch()}`,
-        term: process.env.TERM || '(unknown)',
-        lang: process.env.LANG || '',
     };
 }
 
