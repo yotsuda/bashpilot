@@ -80,7 +80,7 @@ export async function startMcpServer() {
         'Execute a command in the shared bash terminal. The command and its output are visible to the user in real time. Session state (cwd, env vars, functions) persists across calls. Call start_console first if no console is open.',
         {
             command: z.string().describe('The bash command to execute'),
-            timeout_seconds: z.coerce.number().optional().default(30).describe('Timeout in seconds (default: 30)')
+            timeout_seconds: z.coerce.number().optional().default(170).describe('Timeout in seconds (0-170, default: 170). On timeout, execution continues and output is cached for wait_for_completion.')
         },
         async ({ command, timeout_seconds }) => {
             try {
