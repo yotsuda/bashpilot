@@ -4,9 +4,12 @@ Shared console MCP server for bash. AI and user work in the same terminal sessio
 
 ## What This Does
 
-AI calls `start_console` and a bash terminal window opens. You type commands as usual. When AI sends commands via MCP, they appear in the same terminal — you see every command and its output in real time. Session state (cwd, env vars, functions) persists across calls.
+AI and user share a visible bash terminal. When AI sends commands via MCP, they appear in the terminal — you see every command and its output in real time. You can also type in the same terminal to assist AI (e.g., enter passwords, answer prompts, or take over mid-task).
 
-This is the same "shared console" concept as [PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP), implemented for bash using [VS Code's shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) approach (OSC 633 escape sequences).
+This enables collaborative workflows that non-shared tools can't support:
+- **Long-running commands** (npm install, docker build) — progress visible in real time
+- **Interactive prompts** (ssh password, git commit editor, setup wizards) — AI starts it, user responds
+- **Session persistence** — env vars, venv activation, ssh connections, shell functions persist across commands
 
 ## Architecture
 
@@ -28,6 +31,8 @@ graph TB
         end
     end
 
+    User["User"] -- "keyboard" --> C1
+    User -- "keyboard" --> C2
     Client -- "stdio" --> MCP
     CM -- "Unix socket / TCP" --> C1
     CM -- "Unix socket / TCP" --> C2
@@ -55,8 +60,8 @@ claude mcp add bashpilot -- bashpilot
 
 | Tool | Description |
 |------|-------------|
-| `start_console` | Open a visible bash terminal window. Returns system info (user, hostname, OS) and cached outputs from other consoles. Reuses standby console if available. Pass `reason` to force a new one. |
-| `execute_command` | Run a command in the shared terminal. Output is visible to user in real time and returned via MCP with a status line (duration, cwd, exit code). Cached outputs from other consoles are included. If the active console is busy or closed, auto-switches to another. |
+| `start_console` | Open a visible bash terminal window. Returns system info and cached outputs from other consoles. Reuses standby console if available. Pass `reason` to force a new one. |
+| `execute_command` | Run a command in the shared terminal. Output is visible to user in real time and returned via MCP with a status line (duration, cwd, exit code). If the active console is busy or closed, auto-switches to another. |
 | `wait_for_completion` | Wait for busy console(s) to finish and retrieve cached output. Use after a command times out. |
 
 ## Console Management
@@ -68,6 +73,7 @@ bashpilot manages multiple console windows automatically:
 - **Auto-launch**: If no console exists when `execute_command` is called, one is launched automatically.
 - **Output caching**: When a command times out, the console continues running it and caches the output. Retrieve it with `wait_for_completion`, or it's automatically included in the next `start_console` or `execute_command` response.
 - **Display names**: Each console gets a memorable name (e.g., "#9876 Falcon") shown in the window title and status lines.
+- **Unowned consoles**: Consoles can exist without a proxy connection. When the proxy (MCP client) disconnects, consoles revert to unowned state and can be reclaimed by a new proxy session.
 
 ## Response Format
 
@@ -89,15 +95,13 @@ Use wait_for_completion tool to wait and retrieve the result.
 
 1. **MCP client starts bashpilot** via stdio (no manual terminal startup needed).
 
-2. **`start_console`** launches a visible terminal window running bash with shell integration. The window is named (e.g., "bashpilot — #9876 Falcon").
+2. **`start_console`** launches a visible terminal window running bash inside a PTY with [OSC 633 shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) for command lifecycle tracking.
 
-3. **Shell integration**: A small script hooks into `PROMPT_COMMAND` and the `DEBUG` trap to emit OSC 633 markers for command lifecycle tracking, including current working directory (`OSC 633;P;Cwd=<path>`).
+3. **Shared PTY**: Both user keyboard input and AI commands go through the same PTY. Output is displayed in the terminal AND captured for the MCP response simultaneously (dual streaming).
 
-4. **`execute_command`** writes the command to the PTY. The user sees it in the terminal. Output is captured and returned via MCP.
+4. **Console discovery**: Each console listens on a Unix domain socket (or TCP with port file on Windows) with a naming convention that encodes ownership. The proxy discovers consoles by scanning the filesystem.
 
-5. **Dual streaming**: Output goes to the terminal (user sees it) AND is captured for the MCP response simultaneously.
-
-6. **Console discovery**: Each console listens on a Unix domain socket (or TCP with port file on Windows) with a naming convention that encodes ownership. The proxy discovers consoles by scanning the filesystem. Stale files from dead proxy processes are cleaned up on startup.
+5. **Ownership lifecycle**: Consoles track their proxy's liveness. If the proxy dies, the console reverts to unowned state (socket renamed). A new proxy can discover and reclaim unowned consoles automatically.
 
 ## Supported Platforms
 
@@ -109,9 +113,12 @@ Use wait_for_completion tool to wait and retrieve the result.
 
 - Only one command per console at a time (auto-switches to new console if busy)
 - Very long output (>1MB) is truncated
-- Interactive commands (vi, top, etc.) are not supported via MCP
-- The user must keep the terminal window(s) open
+- Interactive commands (vi, top, etc.) are not supported via MCP — but user can interact with them directly in the terminal
 - Characters typed during console startup may interfere with the first AI command
+
+## Related
+
+- [PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP) — The same shared console concept for PowerShell, with deeper engine integration
 
 ## License
 
