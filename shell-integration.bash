@@ -29,6 +29,9 @@ __bash_mcp_precmd() {
         __bash_mcp_in_command=0
     fi
 
+    # Report current working directory
+    __bash_mcp_osc "P;Cwd=$(pwd)"
+
     # Emit PromptStart
     __bash_mcp_osc "A"
 

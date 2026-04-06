@@ -94,6 +94,13 @@ export class OscParser {
             case 'B': return { type: 'commandInputStart' };
             case 'C': return { type: 'commandExecuted' };
             case 'D': return { type: 'commandFinished', exitCode: data ? parseInt(data, 10) : 0 };
+            case 'P': {
+                // Property: P;Key=Value
+                if (data && data.startsWith('Cwd=')) {
+                    return { type: 'cwd', cwd: data.substring(4) };
+                }
+                return null;
+            }
             default: return null;
         }
     }

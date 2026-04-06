@@ -64,6 +64,7 @@ export class CommandTracker {
             this._output = '';
             this._truncated = false;
             this._exitCode = 0;
+            this._cwd = null;
             this._commandSent = commandText;
         });
     }
@@ -77,6 +78,10 @@ export class CommandTracker {
         switch (event.type) {
             case 'commandFinished':
                 this._exitCode = event.exitCode ?? 0;
+                break;
+
+            case 'cwd':
+                this._cwd = event.cwd;
                 break;
 
             case 'promptStart':
@@ -164,8 +169,9 @@ export class CommandTracker {
         }
 
         const exitCode = this._exitCode;
+        const cwd = this._cwd;
         this._cleanup();
-        resolve({ output, exitCode });
+        resolve({ output, exitCode, cwd });
     }
 
     _cleanup() {
