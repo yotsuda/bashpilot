@@ -2,6 +2,10 @@
 
 Shared console MCP server for bash. AI and user work in the same terminal session.
 
+<div align="center">
+  <img src="https://github.com/user-attachments/assets/1343f694-1c05-4899-9faa-d2b1138aa3ba" alt="social-image" width="640" />
+</div>
+
 ## What This Does
 
 AI and user share a visible bash terminal. When AI sends commands via MCP, they appear in the terminal — you see every command and its output in real time. You can also type in the same terminal to assist AI (e.g., enter passwords, answer prompts, or take over mid-task).
