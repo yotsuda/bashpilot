@@ -44,8 +44,20 @@ export async function startMcpServer() {
                     : `Console ${result.displayName} opened (PID ${result.pid}).`;
 
                 const info = { ...systemInfo, console: result.displayName };
+                const parts = [`${status}\n\n${JSON.stringify(info, null, 2)}`];
+
+                // Collect cached outputs from all consoles
+                const cached = await consoleManager.collectAllCachedOutputs();
+                for (const r of cached) {
+                    const cwdInfo = r.cwd ? ` | Location: ${r.cwd}` : '';
+                    const line = r.exitCode === 0
+                        ? `✓ ${r.displayName} | Status: Completed | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`
+                        : `✗ ${r.displayName} | Status: Failed (exit ${r.exitCode}) | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`;
+                    parts.push(`${line}\n\n${r.output || '(no output)'}`);
+                }
+
                 return {
-                    content: [{ type: 'text', text: `${status}\n\n${JSON.stringify(info, null, 2)}` }]
+                    content: [{ type: 'text', text: parts.join('\n\n---\n\n') }]
                 };
             } catch (err) {
                 return {

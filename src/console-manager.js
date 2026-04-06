@@ -186,6 +186,38 @@ export class ConsoleManager {
     }
 
     /**
+     * Collect cached outputs from all consoles (non-blocking).
+     * Returns array of completed results without waiting.
+     */
+    async collectAllCachedOutputs() {
+        const results = [];
+        for (const [pid, c] of this._consoles) {
+            const status = await this._getStatus(c.socketPath);
+            if (!status) {
+                this._removeConsole(pid);
+                continue;
+            }
+            if (status.status === 'completed') {
+                const cached = await this._sendRequest(c.socketPath, {
+                    type: 'get_cached_output',
+                }, 5000).catch(() => null);
+                if (cached && cached.type === 'cached_result') {
+                    this._busyPids.delete(pid);
+                    results.push({
+                        displayName: c.displayName,
+                        output: cached.output,
+                        exitCode: cached.exitCode,
+                        cwd: cached.cwd,
+                        command: cached.command,
+                        duration: cached.duration,
+                    });
+                }
+            }
+        }
+        return results;
+    }
+
+    /**
      * Wait for busy consoles to complete and return cached output.
      * Polls every 1s until timeout.
      */
