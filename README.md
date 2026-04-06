@@ -123,15 +123,17 @@ Use wait_for_completion tool to wait and retrieve the result.
 
 ## How It Works
 
+bashpilot's command tracking is inspired by [VS Code's terminal shell integration](https://code.visualstudio.com/docs/terminal/shell-integration), which uses OSC 633 escape sequences to detect command boundaries. bashpilot adapts this approach for a standalone MCP server, adding advanced console management features not found in VS Code or other MCP servers.
+
 1. **MCP client starts bashpilot** via stdio (no manual terminal startup needed).
 
-2. **`start_console`** launches a visible terminal window running bash inside a PTY with [OSC 633 shell integration](https://code.visualstudio.com/docs/terminal/shell-integration) for command lifecycle tracking.
+2. **`start_console`** launches a visible terminal window running bash inside a PTY. A shell integration script is injected into bash's `PROMPT_COMMAND` and `DEBUG` trap, emitting OSC 633 markers for command lifecycle tracking (start, finish, exit code, working directory).
 
-3. **Shared PTY**: Both user keyboard input and AI commands go through the same PTY. Output is displayed in the terminal AND captured for the MCP response simultaneously (dual streaming).
+3. **Shared PTY**: Both user keyboard input and AI commands go through the same PTY. Output is displayed in the terminal AND captured for the MCP response simultaneously (dual streaming). Users can interact with AI-initiated commands (enter passwords, answer prompts, Ctrl+C to cancel).
 
-4. **Console discovery**: Each console listens on a Unix domain socket (or TCP with port file on Windows) with a naming convention that encodes ownership. The proxy discovers consoles by scanning the filesystem.
+4. **Console discovery**: Each console listens on a Unix domain socket (or TCP with port file on Windows) with a naming convention that encodes ownership. The proxy discovers consoles by scanning the filesystem. This enables multi-console management with automatic busy detection, standby reuse, and dead console cleanup.
 
-5. **Ownership lifecycle**: Consoles track their proxy's liveness. If the proxy dies, the console reverts to unowned state (socket renamed). A new proxy can discover and reclaim unowned consoles automatically.
+5. **Ownership lifecycle**: Consoles monitor their proxy's liveness. If the proxy disconnects, the console reverts to unowned state (socket renamed) and can be reclaimed by a new proxy session automatically.
 
 ## Supported Platforms
 
