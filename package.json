@@ -15,7 +15,7 @@
   ],
   "scripts": {
     "start": "node src/index.js",
-    "test": "node --test test/*.test.js"
+    "test": "node --test test/osc-parser.test.js test/command-tracker.test.js test/socket-paths.test.js test/file-tools.test.js"
   },
   "keywords": [
     "mcp",
