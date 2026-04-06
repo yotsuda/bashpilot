@@ -118,10 +118,17 @@ export class ConsoleManager {
         let socketPath = this._getSocketPath(consolePid);
 
         if (!socketPath) {
-            // No console — auto-launch
+            // No console — auto-launch or discover unowned
             const result = await this.startConsole({});
-            consolePid = result.pid;
-            socketPath = this._getSocketPath(consolePid);
+            const displayName = result.displayName;
+            const cachedOutputs = await this.collectAllCachedOutputs();
+            return {
+                switched: true,
+                displayName,
+                output: `Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
+                exitCode: 0,
+                cachedOutputs,
+            };
         }
 
         // Check if active console is ready
