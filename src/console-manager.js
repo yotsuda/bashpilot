@@ -161,6 +161,25 @@ export class ConsoleManager {
     }
 
     /**
+     * Get current location and system info from the active console.
+     */
+    async getSessionInfo() {
+        const consolePid = this._activePid;
+        const socketPath = this._getSocketPath(consolePid);
+
+        if (!socketPath) {
+            throw new Error('No console connected. Call start_console first.');
+        }
+
+        const response = await this._sendRequest(socketPath, { type: 'get_location' }, 10000);
+        if (!response || response.type === 'error') {
+            throw new Error(response?.message || 'Failed to get location');
+        }
+
+        return response.location;
+    }
+
+    /**
      * Get status of all known consoles.
      */
     getStatus() {

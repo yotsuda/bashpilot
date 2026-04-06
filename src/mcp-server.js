@@ -74,6 +74,25 @@ export async function startMcpServer() {
         }
     );
 
+    server.tool(
+        'get_session_info',
+        'Get current working directory, system info, and session details from the active bash console.',
+        {},
+        async () => {
+            try {
+                const location = await consoleManager.getSessionInfo();
+                return {
+                    content: [{ type: 'text', text: JSON.stringify(location, null, 2) }]
+                };
+            } catch (err) {
+                return {
+                    content: [{ type: 'text', text: `Error: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
     const transport = new StdioServerTransport();
     await server.connect(transport);
 

@@ -115,11 +115,65 @@ async function handleMessage(msg, socket, pty) {
             break;
         }
 
+        case 'get_location': {
+            try {
+                const info = await getLocationInfo(pty);
+                sendMessage(socket, { type: 'location', location: info });
+            } catch (err) {
+                sendMessage(socket, { type: 'error', message: err.message });
+            }
+            break;
+        }
+
         case 'set_title': {
             pty.setTitle(msg.title);
             break;
         }
     }
+}
+
+async function getLocationInfo(pty) {
+    // Collect system/session info by running a script in the bash PTY
+    const script = [
+        'echo "@@BASHPILOT_LOCATION_START@@"',
+        'echo "pwd:$(pwd)"',
+        'echo "user:$(whoami)"',
+        'echo "hostname:$(hostname)"',
+        'echo "shell:$BASH_VERSION"',
+        'echo "os:$(uname -s -r -m)"',
+        'echo "term:$TERM"',
+        'echo "lang:$LANG"',
+        'echo "@@BASHPILOT_LOCATION_END@@"',
+    ].join('; ');
+
+    const result = await pty.executeCommand(script, 5000);
+    const lines = result.output.split('\n');
+
+    const info = {
+        current_directory: null,
+        user: null,
+        hostname: null,
+        bash_version: null,
+        os: null,
+        term: null,
+        lang: null,
+    };
+
+    for (const line of lines) {
+        const [key, ...rest] = line.split(':');
+        const value = rest.join(':');
+        switch (key) {
+            case 'pwd': info.current_directory = value; break;
+            case 'user': info.user = value; break;
+            case 'hostname': info.hostname = value; break;
+            case 'shell': info.bash_version = value; break;
+            case 'os': info.os = value; break;
+            case 'term': info.term = value; break;
+            case 'lang': info.lang = value; break;
+        }
+    }
+
+    return info;
 }
 
 function sendMessage(socket, obj) {
