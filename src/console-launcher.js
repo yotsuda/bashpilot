@@ -33,22 +33,37 @@ export function launchConsole(socketPath, options = {}) {
 }
 
 function launchWindows(nodeCmd, args, cwd) {
-    // Use Windows Terminal (wt.exe) if available, otherwise conhost
+    // Use Windows Terminal (wt.exe) if available, otherwise conhost.
+    // Use cmd /c with a clean environment — cmd.exe inherits system defaults,
+    // not the MCP server's environment.
     const cmdline = [nodeCmd, ...args].map(a => `"${a}"`).join(' ');
+
+    // Minimal environment: only pass what's needed for Node.js to start
+    const cleanEnv = {
+        SystemRoot: process.env.SystemRoot,
+        SYSTEMDRIVE: process.env.SYSTEMDRIVE,
+        PATH: process.env.PATH, // needed to find node.exe
+        USERPROFILE: process.env.USERPROFILE,
+        HOMEDRIVE: process.env.HOMEDRIVE,
+        HOMEPATH: process.env.HOMEPATH,
+        TEMP: process.env.TEMP,
+        TMP: process.env.TMP,
+    };
 
     if (hasCommand('wt.exe')) {
         return spawn('wt.exe', ['--title', 'bashpilot', '--', 'cmd', '/c', cmdline], {
             detached: true,
             stdio: 'ignore',
             cwd: cwd || undefined,
+            env: cleanEnv,
         });
     }
 
-    // Fallback: start with conhost
     return spawn('cmd', ['/c', 'start', 'bashpilot', '/wait', 'cmd', '/k', cmdline], {
         detached: true,
         stdio: 'ignore',
         cwd: cwd || undefined,
+        env: cleanEnv,
     });
 }
 
