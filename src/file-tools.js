@@ -24,13 +24,14 @@ const MAX_LINE_LENGTH = 10000; // Truncate extremely long lines in output
 export function registerFileTools(server) {
     server.tool(
         'read_file',
-        'Read a file with line numbers. Supports offset and limit for large files.',
+        'Read a file with line numbers. Supports offset/limit for large files, or tail to read the last N lines.',
         {
             path: z.string().describe('Absolute path to the file'),
             offset: z.coerce.number().optional().default(0).describe('Line number to start from (0-based)'),
             limit: z.coerce.number().optional().default(2000).describe('Maximum number of lines to read'),
+            tail: z.coerce.number().optional().describe('Read the last N lines (overrides offset/limit)'),
         },
-        async ({ path: filePath, offset, limit }) => {
+        async ({ path: filePath, offset, limit, tail }) => {
             try {
                 if (!fs.existsSync(filePath)) {
                     return error(`File not found: ${filePath}`);
@@ -41,6 +42,11 @@ export function registerFileTools(server) {
                 }
                 if (isBinaryFile(filePath)) {
                     return error(`Binary file, cannot display: ${filePath}`);
+                }
+
+                if (tail) {
+                    const result = await readTail(filePath, tail);
+                    return ok(result);
                 }
 
                 // Stream line by line — skip offset lines, take limit lines
@@ -192,6 +198,43 @@ function ok(text) {
 
 function error(message) {
     return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
+}
+
+// --- Tail reader (ring buffer, single pass) ---
+
+async function readTail(filePath, n) {
+    return new Promise((resolve, reject) => {
+        const stream = createReadStream(filePath, { encoding: 'utf8', flags: 'r' });
+        const rl = createInterface({ input: stream, crlfDelay: Infinity });
+
+        // Ring buffer: store last N lines with their line numbers
+        const buf = new Array(n);
+        let writeIdx = 0;
+        let count = 0;
+        let lineNum = 0;
+
+        rl.on('line', (line) => {
+            lineNum++;
+            buf[writeIdx] = { num: lineNum, line };
+            writeIdx = (writeIdx + 1) % n;
+            if (count < n) count++;
+        });
+
+        rl.on('close', () => {
+            const lines = [];
+            const startIdx = count < n ? 0 : writeIdx;
+            for (let i = 0; i < count; i++) {
+                const entry = buf[(startIdx + i) % n];
+                const display = entry.line.length > MAX_LINE_LENGTH
+                    ? entry.line.substring(0, MAX_LINE_LENGTH) + '...'
+                    : entry.line;
+                lines.push(`${String(entry.num).padStart(4)}: ${display}`);
+            }
+            resolve(lines.join('\n'));
+        });
+
+        rl.on('error', reject);
+    });
 }
 
 // --- Streaming file reader ---

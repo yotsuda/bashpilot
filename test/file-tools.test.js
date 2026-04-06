@@ -82,6 +82,17 @@ describe('file-tools', () => {
             assert.ok(result.content[0].text.includes('directory'));
         });
 
+        it('supports tail to read last N lines', async () => {
+            const lines = Array.from({ length: 20 }, (_, i) => `line${i + 1}`).join('\n');
+            const f = tmpFile('tail.txt', lines);
+            const result = await server.call('read_file', { path: f, tail: 3 });
+            const text = result.content[0].text;
+            assert.ok(text.includes('line18'));
+            assert.ok(text.includes('line19'));
+            assert.ok(text.includes('line20'));
+            assert.ok(!text.includes('line17'));
+        });
+
         it('detects binary file', async () => {
             const f = tmpFile('binary.bin');
             fs.writeFileSync(f, Buffer.from([0x48, 0x65, 0x6c, 0x00, 0x6f]));
