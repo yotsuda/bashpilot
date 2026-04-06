@@ -23,17 +23,18 @@ export async function startMcpServer() {
 
     server.tool(
         'start_console',
-        'Open a visible bash terminal window. The user can see and type in this terminal. AI commands sent via execute_command will also appear here.',
+        'Open a visible bash terminal window. The user can see and type in this terminal. AI commands sent via execute_command will also appear here. If a standby console exists, it will be reused unless reason is provided.',
         {
             shell: z.string().optional().describe('Shell to use (default: $SHELL or bash)'),
             cwd: z.string().optional().describe('Working directory for the console'),
+            reason: z.string().optional().describe('Reason for launching a new console. If provided, forces a new console instead of reusing.'),
         },
-        async ({ shell, cwd }) => {
+        async ({ shell, cwd, reason }) => {
             try {
-                const result = await consoleManager.startConsole({ shell, cwd });
+                const result = await consoleManager.startConsole({ shell, cwd, reason });
                 const msg = result.status === 'reused'
-                    ? `Console already open (PID ${result.pid}). Reusing existing session.`
-                    : `Console opened (PID ${result.pid}). The user can see the terminal window.`;
+                    ? `Reusing standby console ${result.displayName} (PID ${result.pid}).`
+                    : `Console ${result.displayName} opened (PID ${result.pid}).`;
                 return { content: [{ type: 'text', text: msg }] };
             } catch (err) {
                 return {

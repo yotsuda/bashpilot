@@ -37,8 +37,12 @@ __bash_mcp_precmd() {
         eval "$__bash_mcp_original_prompt_command"
     fi
 
-    # Override window title
-    printf '\e]0;bashpilot — %s\a' "${PWD/#$HOME/\~}"
+    # Override window title (use custom title if set by MCP, otherwise default)
+    if [[ -n "$__bashpilot_title" ]]; then
+        printf '\e]0;%s\a' "$__bashpilot_title"
+    else
+        printf '\e]0;bashpilot — %s\a' "${PWD/#$HOME/\~}"
+    fi
 }
 
 # Called after prompt, before command execution (via DEBUG trap)

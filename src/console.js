@@ -70,6 +70,9 @@ export async function startConsole(options) {
                     message: err.message
                 });
             }
+        } else if (msg.type === 'set_title') {
+            // Set terminal window title via escape sequence
+            pty.setTitle(msg.title);
         }
     }
 
