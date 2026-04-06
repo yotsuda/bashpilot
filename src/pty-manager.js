@@ -34,21 +34,13 @@ export class PtyManager {
         const cols = process.stdout.columns || 80;
         const rows = process.stdout.rows || 24;
 
-        // Use login shell (-l) so bash reads ~/.bash_profile and sets up
-        // the user's environment (PATH etc.) rather than inheriting the
-        // MCP server's environment.
-        this._pty = spawn(this.shell, ['-l', '-i'], {
+        this._pty = spawn(this.shell, ['-i'], {
             name: 'xterm-256color',
             cols,
             rows,
             cwd: this.cwd,
             env: {
-                // Minimal environment — let bash's login profile set the rest
-                HOME: process.env.HOME || process.env.USERPROFILE,
-                USER: process.env.USER || process.env.USERNAME,
-                TERM: 'xterm-256color',
-                LANG: process.env.LANG || 'en_US.UTF-8',
-                PATH: process.env.PATH,  // needed for initial shell startup
+                ...process.env,
                 BASHPILOT_ACTIVE: '1',
             }
         });

@@ -1,164 +1,146 @@
 /**
- * Manages multiple console processes from the MCP server side.
+ * Manages console processes via Unix domain socket discovery.
  *
- * - Tracks console state: standby (idle) or busy (executing)
- * - Auto-switches to a standby console when the active one is busy
- * - Launches new consoles when none are available
- * - Assigns display names and sets window titles
+ * Each console listens on a socket file with a naming convention:
+ *   /tmp/bashpilot.{proxyPid}.{agentId}.{consolePid}.sock
+ *
+ * The manager discovers consoles by scanning the filesystem, probes their
+ * status via get_status messages, and routes commands to standby consoles.
+ * If all consoles are busy, a new one is launched automatically.
  */
 
 import net from 'node:net';
 import { randomUUID } from 'node:crypto';
 import { launchConsole } from './console-launcher.js';
 import { generateDisplayName } from './console-names.js';
+import { enumerateSockets, parseSocketPath, cleanupSocket, getSocketPath, readPortFile, usesTcp } from './socket-paths.js';
 
 export class ConsoleManager {
     constructor() {
-        this._server = null;
-        this._port = 0;
-        this._consoles = new Map();  // pid → { socket, pid, displayName, busy }
-        this._activePid = null;      // PID of the currently active console
-        this._pendingRequests = new Map();
-        this._recvBufs = new Map();  // pid → Buffer
-        this._connectResolve = null;
+        this._proxyPid = process.pid;
+        this._agentId = 'default';
+        this._activePid = null;
+        this._busyPids = new Set();
+        this._consoles = new Map();  // consolePid → { socketPath, displayName }
     }
 
     get hasConsole() {
         return this._consoles.size > 0;
     }
 
-    /**
-     * Initialize the TCP server.
-     */
     async init() {
-        return new Promise((resolve, reject) => {
-            this._server = net.createServer((socket) => {
-                this._handleConnection(socket);
-            });
-            this._server.on('error', reject);
-            this._server.listen(0, '127.0.0.1', () => {
-                this._port = this._server.address().port;
-                resolve();
-            });
-        });
+        // No server to start — we discover consoles by scanning the filesystem
     }
 
     /**
      * Start or reuse a console.
-     * If reason is provided, always launch a new console.
-     * Otherwise, reuse an existing standby console if available.
      */
     async startConsole(options = {}) {
         const forceNew = !!options.reason;
 
         if (!forceNew) {
             // Try to find a standby console
-            const standby = this._findStandbyConsole();
+            const standby = await this._findStandbyConsole();
             if (standby) {
-                this._activePid = standby.pid;
+                this._activePid = standby.consolePid;
                 return {
                     status: 'reused',
-                    pid: standby.pid,
-                    displayName: standby.displayName
+                    pid: standby.consolePid,
+                    displayName: this._consoles.get(standby.consolePid)?.displayName || `#${standby.consolePid}`,
                 };
             }
         }
 
         // Launch new console
-        launchConsole(`tcp:${this._port}`, {
+        launchConsole(this._proxyPid, this._agentId, {
             shell: options.shell,
             cwd: options.cwd,
         });
 
-        const pid = await this._waitForConnection(15000);
-        const console = this._consoles.get(pid);
+        // Wait for the new console's socket to appear
+        const socketPath = await this._waitForNewSocket(15000);
+        const parsed = parseSocketPath(socketPath);
+        const consolePid = parsed.consolePid;
 
-        // Assign display name and set window title
-        const displayName = generateDisplayName(pid);
-        console.displayName = displayName;
-        this._activePid = pid;
+        const displayName = generateDisplayName(consolePid);
+        this._consoles.set(consolePid, { socketPath, displayName });
+        this._activePid = consolePid;
 
-        // Tell console to set window title
-        this._sendMessage(console.socket, {
+        // Set window title
+        await this._sendRequest(socketPath, {
             type: 'set_title',
             title: `bashpilot — ${displayName}`,
-        });
+        }).catch(() => {});
 
-        return { status: 'started', pid, displayName };
+        return { status: 'started', pid: consolePid, displayName };
     }
 
     /**
      * Execute a command on a console.
-     * If active console is busy, auto-switch to standby or launch new.
      */
     async executeCommand(command, timeoutMs = 30000) {
-        let console = this._getActiveConsole();
+        // Fast path: check active console
+        let consolePid = this._activePid;
+        let socketPath = this._getSocketPath(consolePid);
 
-        if (!console) {
+        if (!socketPath) {
             throw new Error('No console connected. Call start_console first.');
         }
 
-        // If active console is busy, find or launch another
-        if (console.busy) {
-            const standby = this._findStandbyConsole();
+        // Check if active console is ready
+        const status = await this._getStatus(socketPath);
+        if (!status) {
+            // Dead console — clean up and find another
+            this._removeConsole(consolePid);
+            const standby = await this._findStandbyConsole();
             if (standby) {
-                this._activePid = standby.pid;
-                console = standby;
+                consolePid = standby.consolePid;
+                socketPath = standby.socketPath;
+                this._activePid = consolePid;
             } else {
-                // Launch a new console and wait for it
-                launchConsole(`tcp:${this._port}`, {});
-                const newPid = await this._waitForConnection(15000);
-                const newConsole = this._consoles.get(newPid);
-                const displayName = generateDisplayName(newPid);
-                newConsole.displayName = displayName;
-                this._activePid = newPid;
-
-                this._sendMessage(newConsole.socket, {
-                    type: 'set_title',
-                    title: `bashpilot — ${displayName}`,
-                });
-
-                console = newConsole;
+                throw new Error('Console was closed. Call start_console to open a new one.');
+            }
+        } else if (status.status === 'busy') {
+            this._busyPids.add(consolePid);
+            // Find another standby console or launch new
+            const standby = await this._findStandbyConsole();
+            if (standby) {
+                consolePid = standby.consolePid;
+                socketPath = standby.socketPath;
+                this._activePid = consolePid;
+            } else {
+                // Launch new console automatically
+                const result = await this.startConsole({});
+                consolePid = result.pid;
+                socketPath = this._getSocketPath(consolePid);
             }
         }
 
-        // Mark busy
-        console.busy = true;
-        const consolePid = console.pid;
-        const id = randomUUID();
-
-        return new Promise((resolve, reject) => {
-            const timeoutId = setTimeout(() => {
-                this._pendingRequests.delete(id);
-                // Don't unmark busy on timeout — command may still be running
-                reject(new Error(`Command timed out after ${timeoutMs}ms`));
-            }, timeoutMs);
-
-            this._pendingRequests.set(id, {
-                resolve: (result) => {
-                    const c = this._consoles.get(consolePid);
-                    if (c) c.busy = false;
-                    resolve(result);
-                },
-                reject: (err) => {
-                    const c = this._consoles.get(consolePid);
-                    if (c) c.busy = false;
-                    reject(err);
-                },
-                timeoutId
-            });
-
-            this._sendMessage(console.socket, {
+        // Send execute command
+        this._busyPids.add(consolePid);
+        try {
+            const response = await this._sendRequest(socketPath, {
                 type: 'execute',
-                id,
+                id: randomUUID(),
                 command,
                 timeout: timeoutMs,
-            });
-        });
+            }, timeoutMs + 5000);
+
+            this._busyPids.delete(consolePid);
+
+            if (response.type === 'error') {
+                throw new Error(response.message);
+            }
+
+            return { output: response.output, exitCode: response.exitCode };
+        } catch (err) {
+            this._busyPids.delete(consolePid);
+            throw err;
+        }
     }
 
     /**
-     * Get status of all consoles.
+     * Get status of all known consoles.
      */
     getStatus() {
         const consoles = [];
@@ -166,148 +148,173 @@ export class ConsoleManager {
             consoles.push({
                 pid,
                 displayName: c.displayName,
-                busy: c.busy,
+                busy: this._busyPids.has(pid),
                 active: pid === this._activePid,
             });
         }
         return consoles;
     }
 
-    _getActiveConsole() {
-        if (this._activePid && this._consoles.has(this._activePid)) {
-            return this._consoles.get(this._activePid);
+    // --- Discovery ---
+
+    /**
+     * Find a standby (non-busy) console by probing all known sockets.
+     */
+    async _findStandbyConsole() {
+        const sockets = enumerateSockets(this._proxyPid, this._agentId);
+
+        for (const socketPath of sockets) {
+            const parsed = parseSocketPath(socketPath);
+            if (!parsed) continue;
+
+            const status = await this._getStatus(socketPath);
+            if (!status) {
+                // Dead socket — clean up
+                this._removeConsole(parsed.consolePid);
+                cleanupSocket(socketPath);
+                continue;
+            }
+
+            // Register if not already known
+            if (!this._consoles.has(parsed.consolePid)) {
+                const displayName = generateDisplayName(parsed.consolePid);
+                this._consoles.set(parsed.consolePid, { socketPath, displayName });
+            }
+
+            if (status.status === 'standby') {
+                return { consolePid: parsed.consolePid, socketPath };
+            } else {
+                this._busyPids.add(parsed.consolePid);
+            }
         }
-        // Fallback to any console
-        for (const c of this._consoles.values()) {
-            this._activePid = c.pid;
-            return c;
-        }
+
         return null;
     }
 
-    _findStandbyConsole() {
-        for (const c of this._consoles.values()) {
-            if (!c.busy) return c;
-        }
-        return null;
-    }
+    /**
+     * Wait for a new socket file to appear (after launching a console).
+     */
+    async _waitForNewSocket(timeoutMs) {
+        const start = Date.now();
+        const knownPids = new Set(this._consoles.keys());
 
-    _handleConnection(socket) {
-        const socketId = randomUUID();
-        this._recvBufs.set(socketId, Buffer.alloc(0));
-
-        socket.on('data', (data) => {
-            const buf = Buffer.concat([this._recvBufs.get(socketId) || Buffer.alloc(0), data]);
-            this._recvBufs.set(socketId, buf);
-            this._processMessages(socketId, socket);
-        });
-
-        socket.on('close', () => {
-            this._recvBufs.delete(socketId);
-            // Find and remove the console by socket
-            for (const [pid, c] of this._consoles) {
-                if (c.socket === socket) {
-                    this._consoles.delete(pid);
-                    if (this._activePid === pid) {
-                        // Switch active to another console if available
-                        this._activePid = this._consoles.size > 0
-                            ? this._consoles.keys().next().value
-                            : null;
-                    }
-                    break;
+        while (Date.now() - start < timeoutMs) {
+            const sockets = enumerateSockets(this._proxyPid, this._agentId);
+            for (const socketPath of sockets) {
+                const parsed = parseSocketPath(socketPath);
+                if (parsed && !knownPids.has(parsed.consolePid)) {
+                    // New socket found — verify it's responsive
+                    const status = await this._getStatus(socketPath);
+                    if (status) return socketPath;
                 }
             }
-            // Reject pending requests for this socket
-            for (const [id, req] of this._pendingRequests) {
-                clearTimeout(req.timeoutId);
-                req.reject(new Error('Console disconnected'));
-            }
-        });
+            await sleep(200);
+        }
 
-        socket.on('error', () => socket.destroy());
+        throw new Error('Console failed to start within timeout');
     }
 
-    _processMessages(socketId, socket) {
-        let buf = this._recvBufs.get(socketId);
-        while (buf && buf.length >= 4) {
-            const len = buf.readUInt32LE(0);
-            if (buf.length < 4 + len) break;
-            const json = buf.subarray(4, 4 + len).toString('utf8');
-            buf = buf.subarray(4 + len);
-            this._recvBufs.set(socketId, buf);
-            try {
-                this._handleMessage(socket, JSON.parse(json));
-            } catch {}
+    // --- Socket communication ---
+
+    /**
+     * Send get_status to a console and return the response, or null if dead.
+     */
+    async _getStatus(socketPath) {
+        try {
+            return await this._sendRequest(socketPath, { type: 'get_status' }, 3000);
+        } catch {
+            return null;
         }
     }
 
-    _handleMessage(socket, msg) {
-        switch (msg.type) {
-            case 'ready': {
-                const pid = msg.pid;
-                this._consoles.set(pid, {
-                    socket,
-                    pid,
-                    displayName: null,
-                    busy: false,
-                });
-                if (this._connectResolve) {
-                    this._connectResolve(pid);
-                    this._connectResolve = null;
-                }
-                break;
-            }
-
-            case 'result':
-            case 'error': {
-                const req = this._pendingRequests.get(msg.id);
-                if (req) {
-                    clearTimeout(req.timeoutId);
-                    this._pendingRequests.delete(msg.id);
-                    if (msg.type === 'result') {
-                        req.resolve({ output: msg.output, exitCode: msg.exitCode });
-                    } else {
-                        req.reject(new Error(msg.message));
-                    }
-                }
-                break;
-            }
-        }
-    }
-
-    _sendMessage(socket, obj) {
-        const json = JSON.stringify(obj);
-        const buf = Buffer.from(json, 'utf8');
-        const lenBuf = Buffer.alloc(4);
-        lenBuf.writeUInt32LE(buf.length);
-        socket.write(lenBuf);
-        socket.write(buf);
-    }
-
-    _waitForConnection(timeoutMs) {
+    /**
+     * Connect to a console (Unix socket or TCP via port file), send a message, wait for response.
+     */
+    _sendRequest(socketPath, message, timeoutMs = 10000) {
         return new Promise((resolve, reject) => {
-            // Check if a console just connected
-            if (this._connectResolve) {
-                reject(new Error('Already waiting for a connection'));
-                return;
-            }
-            this._connectResolve = resolve;
-            setTimeout(() => {
-                if (this._connectResolve === resolve) {
-                    this._connectResolve = null;
-                    reject(new Error('Console failed to connect within timeout'));
+            let connectOptions;
+            if (usesTcp()) {
+                const port = readPortFile(socketPath);
+                if (!port) {
+                    reject(new Error('Port file not found or invalid'));
+                    return;
                 }
+                connectOptions = { host: '127.0.0.1', port };
+            } else {
+                connectOptions = { path: socketPath };
+            }
+
+            const socket = net.createConnection(connectOptions, () => {
+                // Send message
+                const json = JSON.stringify(message);
+                const buf = Buffer.from(json, 'utf8');
+                const lenBuf = Buffer.alloc(4);
+                lenBuf.writeUInt32LE(buf.length);
+                socket.write(lenBuf);
+                socket.write(buf);
+            });
+
+            let recvBuf = Buffer.alloc(0);
+            const timer = setTimeout(() => {
+                socket.destroy();
+                reject(new Error('Request timed out'));
             }, timeoutMs);
+
+            socket.on('data', (data) => {
+                recvBuf = Buffer.concat([recvBuf, data]);
+
+                while (recvBuf.length >= 4) {
+                    const len = recvBuf.readUInt32LE(0);
+                    if (recvBuf.length < 4 + len) break;
+                    const json = recvBuf.subarray(4, 4 + len).toString('utf8');
+                    recvBuf = recvBuf.subarray(4 + len);
+                    clearTimeout(timer);
+                    try {
+                        resolve(JSON.parse(json));
+                    } catch (e) {
+                        reject(e);
+                    }
+                    // Don't close socket — keep alive for execute commands
+                    // that send output after the command finishes
+                    return;
+                }
+            });
+
+            socket.on('error', (err) => {
+                clearTimeout(timer);
+                reject(err);
+            });
+
+            socket.on('close', () => {
+                clearTimeout(timer);
+                reject(new Error('Socket closed'));
+            });
         });
+    }
+
+    // --- Cleanup ---
+
+    _getSocketPath(consolePid) {
+        return this._consoles.get(consolePid)?.socketPath || null;
+    }
+
+    _removeConsole(consolePid) {
+        this._consoles.delete(consolePid);
+        this._busyPids.delete(consolePid);
+        if (this._activePid === consolePid) {
+            this._activePid = this._consoles.size > 0
+                ? this._consoles.keys().next().value
+                : null;
+        }
     }
 
     dispose() {
-        for (const c of this._consoles.values()) {
-            c.socket.destroy();
-        }
+        // Don't kill consoles — they may be shared with user
         this._consoles.clear();
-        if (this._server) {
-            this._server.close();
-        }
+        this._busyPids.clear();
     }
+}
+
+function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
 }

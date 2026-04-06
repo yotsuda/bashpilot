@@ -15,9 +15,9 @@ const ENTRY = join(__dirname, 'index.js');
  * Launch a visible terminal window running bashpilot --console.
  * Returns the child process (detached).
  */
-export function launchConsole(socketPath, options = {}) {
+export function launchConsole(proxyPid, agentId, options = {}) {
     const nodeCmd = process.execPath;
-    const args = [ENTRY, '--console', '--socket', socketPath];
+    const args = [ENTRY, '--console', '--proxy-pid', String(proxyPid), '--agent-id', agentId];
     if (options.shell) args.push('--shell', options.shell);
     if (options.cwd) args.push('--cwd', options.cwd);
 
@@ -38,24 +38,11 @@ function launchWindows(nodeCmd, args, cwd) {
     // not the MCP server's environment.
     const cmdline = [nodeCmd, ...args].map(a => `"${a}"`).join(' ');
 
-    // Minimal environment: only pass what's needed for Node.js to start
-    const cleanEnv = {
-        SystemRoot: process.env.SystemRoot,
-        SYSTEMDRIVE: process.env.SYSTEMDRIVE,
-        PATH: process.env.PATH, // needed to find node.exe
-        USERPROFILE: process.env.USERPROFILE,
-        HOMEDRIVE: process.env.HOMEDRIVE,
-        HOMEPATH: process.env.HOMEPATH,
-        TEMP: process.env.TEMP,
-        TMP: process.env.TMP,
-    };
-
     if (hasCommand('wt.exe')) {
         return spawn('wt.exe', ['--title', 'bashpilot', '--', 'cmd', '/c', cmdline], {
             detached: true,
             stdio: 'ignore',
             cwd: cwd || undefined,
-            env: cleanEnv,
         });
     }
 
@@ -63,7 +50,6 @@ function launchWindows(nodeCmd, args, cwd) {
         detached: true,
         stdio: 'ignore',
         cwd: cwd || undefined,
-        env: cleanEnv,
     });
 }
 

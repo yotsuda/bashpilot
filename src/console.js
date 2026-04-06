@@ -1,43 +1,71 @@
 /**
  * Console mode: runs inside a visible terminal window.
  *
- * 1. Spawns bash PTY with shell integration
- * 2. Forwards stdin/stdout for user interaction
- * 3. Connects to MCP server via TCP localhost
- * 4. Receives commands from MCP server, writes to PTY, returns output
+ * Each console is a socket/TCP SERVER — the MCP proxy connects to it.
+ * - Unix: listens on a Unix domain socket file
+ * - Windows: listens on TCP localhost; writes port to a .port marker file
+ *
+ * Handles requests from MCP proxy: get_status, execute, set_title
  */
 
 import net from 'node:net';
 import { PtyManager } from './pty-manager.js';
+import { getSocketPath, cleanupSocket, writePortFile, usesTcp } from './socket-paths.js';
 
 export async function startConsole(options) {
-    const socketArg = options.socket;
-    if (!socketArg) {
-        process.stderr.write('Error: --socket is required in console mode\n');
+    const { proxyPid, agentId } = options;
+    if (!proxyPid) {
+        process.stderr.write('Error: --proxy-pid is required in console mode\n');
         process.exit(1);
     }
+
+    const consolePid = process.pid;
+    const markerPath = getSocketPath(proxyPid, agentId || 'default', consolePid);
 
     const pty = new PtyManager({
         shell: options.shell,
         cwd: options.cwd || process.cwd(),
     });
 
-    // Parse socket argument: "tcp:PORT" or a Unix socket path
-    let connectOptions;
-    if (socketArg.startsWith('tcp:')) {
-        const port = parseInt(socketArg.substring(4), 10);
-        connectOptions = { host: '127.0.0.1', port };
-    } else {
-        connectOptions = { path: socketArg };
-    }
-
-    const client = net.createConnection(connectOptions, () => {
-        sendMessage(client, { type: 'ready', pid: process.pid });
+    const server = net.createServer((socket) => {
+        handleConnection(socket, pty);
     });
 
+    if (usesTcp()) {
+        // Windows: listen on TCP localhost, write port to marker file
+        server.listen(0, '127.0.0.1', () => {
+            const port = server.address().port;
+            writePortFile(markerPath, port);
+        });
+    } else {
+        // Unix: listen on domain socket
+        cleanupSocket(markerPath);
+        server.listen(markerPath);
+    }
+
+    server.on('error', (err) => {
+        process.stderr.write(`\x1b[31m[bashpilot] Server error: ${err.message}\x1b[0m\n`);
+        process.exit(1);
+    });
+
+    // Start PTY (user-facing terminal)
+    pty.start();
+
+    // Cleanup on exit
+    const cleanup = () => {
+        pty.dispose();
+        server.close();
+        cleanupSocket(markerPath);
+    };
+    process.on('exit', () => cleanupSocket(markerPath));
+    process.on('SIGINT', cleanup);
+    process.on('SIGTERM', cleanup);
+}
+
+function handleConnection(socket, pty) {
     let recvBuf = Buffer.alloc(0);
 
-    client.on('data', (data) => {
+    socket.on('data', (data) => {
         recvBuf = Buffer.concat([recvBuf, data]);
 
         while (recvBuf.length >= 4) {
@@ -48,53 +76,50 @@ export async function startConsole(options) {
 
             try {
                 const msg = JSON.parse(json);
-                handleMessage(msg);
+                handleMessage(msg, socket, pty);
             } catch {}
         }
     });
 
-    async function handleMessage(msg) {
-        if (msg.type === 'execute') {
+    socket.on('error', () => {});
+}
+
+async function handleMessage(msg, socket, pty) {
+    switch (msg.type) {
+        case 'get_status': {
+            const busy = pty.tracker.busy;
+            sendMessage(socket, {
+                type: 'status',
+                status: busy ? 'busy' : 'standby',
+                pid: process.pid,
+            });
+            break;
+        }
+
+        case 'execute': {
             try {
                 const result = await pty.executeCommand(msg.command, msg.timeout || 30000);
-                sendMessage(client, {
+                sendMessage(socket, {
                     type: 'result',
                     id: msg.id,
                     output: result.output,
                     exitCode: result.exitCode
                 });
             } catch (err) {
-                sendMessage(client, {
+                sendMessage(socket, {
                     type: 'error',
                     id: msg.id,
                     message: err.message
                 });
             }
-        } else if (msg.type === 'set_title') {
-            // Set terminal window title via escape sequence
+            break;
+        }
+
+        case 'set_title': {
             pty.setTitle(msg.title);
+            break;
         }
     }
-
-    client.on('error', (err) => {
-        process.stderr.write(`\x1b[31m[bashpilot] Connection error: ${err.message}\x1b[0m\n`);
-        process.exit(1);
-    });
-
-    client.on('close', () => {
-        pty.dispose();
-        process.exit(0);
-    });
-
-    // Start PTY (user-facing terminal)
-    pty.start();
-
-    const cleanup = () => {
-        pty.dispose();
-        client.destroy();
-    };
-    process.on('SIGINT', cleanup);
-    process.on('SIGTERM', cleanup);
 }
 
 function sendMessage(socket, obj) {
