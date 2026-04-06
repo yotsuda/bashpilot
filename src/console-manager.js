@@ -112,13 +112,17 @@ export class ConsoleManager {
         let socketPath = this._getSocketPath(consolePid);
 
         if (!socketPath) {
-            throw new Error('No console connected. Call start_console first.');
+            // No console — auto-launch
+            const result = await this.startConsole({});
+            consolePid = result.pid;
+            socketPath = this._getSocketPath(consolePid);
         }
 
         // Check if active console is ready
         const status = await this._getStatus(socketPath);
         if (!status) {
-            // Dead console — clean up and find another
+            // Dead console — clean up, find or launch another
+            const deadName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
             this._removeConsole(consolePid);
             const standby = await this._findStandbyConsole();
             if (standby) {
@@ -126,8 +130,19 @@ export class ConsoleManager {
                 socketPath = standby.socketPath;
                 this._activePid = consolePid;
             } else {
-                throw new Error('Console was closed. Call start_console to open a new one.');
+                // Auto-launch a new console
+                const result = await this.startConsole({});
+                consolePid = result.pid;
+                socketPath = this._getSocketPath(consolePid);
             }
+
+            const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            return {
+                switched: true,
+                displayName,
+                output: `Console ${deadName} was closed. Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
+                exitCode: 0,
+            };
         } else if (status.status === 'busy') {
             this._busyPids.add(consolePid);
             // Find another standby console or launch new
