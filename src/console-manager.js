@@ -29,7 +29,25 @@ export class ConsoleManager {
     }
 
     async init() {
-        // No server to start — we discover consoles by scanning the filesystem
+        // Clean up stale port/socket files from dead proxy processes
+        this._cleanupStaleFiles();
+    }
+
+    /**
+     * Remove port/socket files left by proxy processes that no longer exist.
+     */
+    _cleanupStaleFiles() {
+        const allSockets = enumerateSockets();
+        for (const socketPath of allSockets) {
+            const parsed = parseSocketPath(socketPath);
+            if (!parsed || !parsed.owned) continue;
+            if (parsed.proxyPid === this._proxyPid) continue;
+
+            // Check if the proxy process is still alive
+            if (!isProcessAlive(parsed.proxyPid)) {
+                cleanupSocket(socketPath);
+            }
+        }
     }
 
     /**
@@ -337,4 +355,13 @@ export class ConsoleManager {
 
 function sleep(ms) {
     return new Promise(r => setTimeout(r, ms));
+}
+
+function isProcessAlive(pid) {
+    try {
+        process.kill(pid, 0); // signal 0 = check existence only
+        return true;
+    } catch {
+        return false;
+    }
 }
