@@ -11,6 +11,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ConsoleManager } from './console-manager.js';
+import { registerFileTools } from './file-tools.js';
 import os from 'node:os';
 
 export async function startMcpServer() {
@@ -160,6 +161,9 @@ export async function startMcpServer() {
             }
         }
     );
+
+    // File operation tools (Node.js native, not PTY-based)
+    registerFileTools(server);
 
     const transport = new StdioServerTransport();
     await server.connect(transport);
