@@ -36,8 +36,8 @@ export async function startConsole(options) {
             if (options.title) {
                 process.stdout.write(`\x1b]0;${options.title}\x07`);
             } else if (!_proxyPid) {
-                // Unowned: set a default title
-                process.stdout.write(`\x1b]0;bashpilot #${consolePid}\x07`);
+                // Unowned: set a default title with ____ placeholder
+                process.stdout.write(`\x1b]0;bashpilot #${consolePid} ____\x07`);
             }
         },
     });
@@ -144,8 +144,8 @@ function revertToUnowned() {
         cleanupSocket(oldPath);
     });
 
-    // Update window title
-    process.stdout.write(`\x1b]0;bashpilot #${process.pid}\x07`);
+    // Update window title (unowned placeholder)
+    process.stdout.write(`\x1b]0;bashpilot #${process.pid} ____\x07`);
 }
 
 /**
