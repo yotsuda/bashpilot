@@ -6,6 +6,15 @@ Shared console MCP server for bash. AI and user work in the same terminal sessio
   <img src="https://github.com/user-attachments/assets/1343f694-1c05-4899-9faa-d2b1138aa3ba" alt="social-image" width="640" />
 </div>
 
+## PowerShell.MCP or bashpilot?
+
+If you can install [PowerShell 7](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell) on your system, we strongly recommend **[PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP)** instead. It offers deeper engine integration, structured output, LLM-optimized text editing cmdlets, and works on Windows, Linux, and macOS.
+
+**Use bashpilot when:**
+- PowerShell 7 cannot be installed (e.g., restricted corporate PCs, minimal containers)
+- You need to run existing bash/shell scripts with AI assistance
+- Your workflow is built around bash tools (sed, awk, jq, grep pipelines)
+
 ## What This Does
 
 AI and user share a visible bash terminal. When AI sends commands via MCP, they appear in the terminal — you see every command and its output in real time. You can also type in the same terminal to assist AI (e.g., enter passwords, answer prompts, or take over mid-task).
