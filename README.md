@@ -8,7 +8,7 @@ Shared console MCP server for bash. AI and user work in the same terminal sessio
 
 ## PowerShell.MCP or bashpilot?
 
-If you can install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/install-powershell-on-windows) on your system, we strongly recommend **[PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP)** instead. It offers deeper engine integration, structured output, LLM-optimized text editing cmdlets, and works on Windows, Linux, and macOS.
+If you can install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) on your system, we strongly recommend **[PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP)** instead. It offers deeper engine integration, structured output, LLM-optimized text editing cmdlets, and works on Windows, Linux, and macOS.
 
 **Use bashpilot when:**
 - PowerShell 7 cannot be installed (e.g., restricted corporate PCs, minimal containers)
@@ -32,7 +32,7 @@ graph TB
 
     subgraph MCP["bashpilot MCP server (stdio)"]
         CM["Console<br/>Manager"]
-        Tools["start_console<br/>execute_command<br/>wait_for_completion"]
+        Tools["start_console<br/>execute_command<br/>wait_for_completion<br/>read_file / write_file / edit_file<br/>search_files / find_files"]
     end
 
     subgraph Consoles["Visible Terminal Windows"]
@@ -93,6 +93,11 @@ Restart Claude Desktop after saving.
 | `start_console` | Open a visible bash terminal window. Returns system info and cached outputs from other consoles. Reuses standby console if available. Pass `reason` to force a new one. |
 | `execute_command` | Run a command in the shared terminal. Output is visible to user in real time and returned via MCP with a status line (duration, cwd, exit code). If the active console is busy or closed, auto-switches to another. |
 | `wait_for_completion` | Wait for busy console(s) to finish and retrieve cached output. Use after a command times out. |
+| `read_file` | Read a file with line numbers. Supports offset/limit for paging, tail for last N lines. |
+| `write_file` | Create or overwrite a file. |
+| `edit_file` | Replace an exact string in a file (must be unique, or use replace_all). |
+| `search_files` | Search file contents with regex. Returns matching lines with file paths and line numbers. |
+| `find_files` | Find files by glob pattern. |
 
 ## Console Management
 
