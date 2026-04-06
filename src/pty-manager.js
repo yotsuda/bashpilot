@@ -146,14 +146,14 @@ export class PtyManager {
 
     /**
      * Set the terminal window title.
-     * Sets a bash variable that the shell integration's precmd reads,
-     * and also immediately writes the OSC escape sequence.
+     * Sets __bashpilot_title which gets injected into PS1 by shell integration.
+     * Clears the screen to hide the variable assignment from the user.
+     * Also writes OSC directly for immediate effect.
      */
     setTitle(title) {
         if (this._pty) {
-            // Set the variable so precmd uses it on every prompt
-            this._pty.write(`__bashpilot_title='${title.replace(/'/g, "'\\''")}'\n`);
-            // Also set it immediately via stdout (no need to wait for next prompt)
+            const escaped = title.replace(/'/g, "'\\''");
+            this._pty.write(`__bashpilot_title='${escaped}'; clear\n`);
             process.stdout.write(`\x1b]0;${title}\x07`);
         }
     }

@@ -10,43 +10,39 @@ This is the same "shared console" concept as [PowerShell.MCP](https://github.com
 
 ## Architecture
 
-```
-┌──────────────────────────────────────────┐
-│  Your Terminal                            │
-│                                           │
-│  $ ls -la          ← you typed this       │
-│  drwxr-xr-x ...                           │
-│  $ echo hello      ← AI sent this via MCP │
-│  hello                                    │
-│  $                                        │
-└──────────────────────────────────────────┘
-        │ stdin             ▲ stdout
-        ▼                   │
-  ┌─────────────────────────────────────┐
-  │         bashpilot process            │
-  │                                     │
-  │  ┌──────────┐    ┌──────────────┐   │
-  │  │ PTY      │◄──►│ bash         │   │
-  │  │ Manager  │    │ (+ OSC 633)  │   │
-  │  └────┬─────┘    └──────────────┘   │
-  │       │                             │
-  │  ┌────┴─────┐    ┌──────────────┐   │
-  │  │ OSC      │───►│ Command      │   │
-  │  │ Parser   │    │ Tracker      │   │
-  │  └──────────┘    └──────────────┘   │
-  │                                     │
-  │  ┌──────────────────────────────┐   │
-  │  │ MCP Server (HTTP+SSE)       │   │
-  │  │  tool: execute_command       │   │
-  │  └──────────────────────────────┘   │
-  └─────────────────────────────────────┘
-               ▲
-               │ HTTP+SSE
-               ▼
-        ┌──────────────┐
-        │  MCP Client  │
-        │  (Claude, etc)│
-        └──────────────┘
+```mermaid
+graph TB
+    subgraph Terminal["🖥️ Your Terminal"]
+        direction TB
+        T1["$ ls -la &nbsp; &nbsp; &nbsp; &nbsp; &nbsp; ← you typed this"]
+        T2["drwxr-xr-x ..."]
+        T3["$ echo hello &nbsp; ← AI sent this via MCP"]
+        T4["hello"]
+    end
+
+    subgraph BP["bashpilot process"]
+        direction TB
+        subgraph Core[" "]
+            direction LR
+            PTY["PTY<br/>Manager"]
+            BASH["bash<br/>(+ OSC 633)"]
+            PTY <--> BASH
+        end
+        subgraph Processing[" "]
+            direction LR
+            OSC["OSC<br/>Parser"]
+            CT["Command<br/>Tracker"]
+            OSC --> CT
+        end
+        PTY --> OSC
+        MCP["MCP Server (HTTP+SSE)<br/>tool: execute_command"]
+    end
+
+    Client["MCP Client<br/>(Claude, etc.)"]
+
+    Terminal -- "stdin" --> BP
+    BP -- "stdout" --> Terminal
+    Client <-- "HTTP+SSE" --> MCP
 ```
 
 ## Quick Start
