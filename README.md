@@ -8,7 +8,7 @@ Shared console MCP server for bash. AI and user work in the same terminal sessio
 
 ## PowerShell.MCP or bashpilot?
 
-If you can install [PowerShell 7](https://learn.microsoft.com/en-us/powershell/scripting/install/installing-powershell) on your system, we strongly recommend **[PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP)** instead. It offers deeper engine integration, structured output, LLM-optimized text editing cmdlets, and works on Windows, Linux, and macOS.
+If you can install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/install-powershell-on-windows) on your system, we strongly recommend **[PowerShell.MCP](https://github.com/yotsuda/PowerShell.MCP)** instead. It offers deeper engine integration, structured output, LLM-optimized text editing cmdlets, and works on Windows, Linux, and macOS.
 
 **Use bashpilot when:**
 - PowerShell 7 cannot be installed (e.g., restricted corporate PCs, minimal containers)
