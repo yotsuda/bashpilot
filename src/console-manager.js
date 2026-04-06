@@ -186,6 +186,54 @@ export class ConsoleManager {
     }
 
     /**
+     * Wait for busy consoles to complete and return cached output.
+     * Polls every 1s until timeout.
+     */
+    async waitForCompletion(timeoutMs = 30000) {
+        const start = Date.now();
+        const results = [];
+
+        while (Date.now() - start < timeoutMs) {
+            let anyBusy = false;
+
+            for (const [pid, c] of this._consoles) {
+                const status = await this._getStatus(c.socketPath);
+                if (!status) {
+                    this._removeConsole(pid);
+                    continue;
+                }
+
+                if (status.status === 'completed') {
+                    // Fetch cached output
+                    const cached = await this._sendRequest(c.socketPath, {
+                        type: 'get_cached_output',
+                    }, 5000).catch(() => null);
+
+                    if (cached && cached.type === 'cached_result') {
+                        this._busyPids.delete(pid);
+                        results.push({
+                            displayName: c.displayName,
+                            output: cached.output,
+                            exitCode: cached.exitCode,
+                            cwd: cached.cwd,
+                            command: cached.command,
+                            duration: cached.duration,
+                        });
+                    }
+                } else if (status.status === 'busy') {
+                    anyBusy = true;
+                }
+            }
+
+            if (results.length > 0 || !anyBusy) break;
+
+            await sleep(1000);
+        }
+
+        return results;
+    }
+
+    /**
      * Get status of all known consoles.
      */
     getStatus() {

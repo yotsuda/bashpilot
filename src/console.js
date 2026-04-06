@@ -93,11 +93,31 @@ async function handleMessage(msg, socket, pty) {
     switch (msg.type) {
         case 'get_status': {
             const busy = pty.tracker.busy;
+            const hasCached = pty.tracker.hasCachedOutput;
             sendMessage(socket, {
                 type: 'status',
-                status: busy ? 'busy' : 'standby',
+                status: hasCached ? 'completed' : (busy ? 'busy' : 'standby'),
                 pid: process.pid,
             });
+            break;
+        }
+
+        case 'get_cached_output': {
+            const cached = pty.tracker.consumeCachedOutput();
+            if (cached) {
+                sendMessage(socket, {
+                    type: 'cached_result',
+                    output: cached.output,
+                    exitCode: cached.exitCode,
+                    cwd: cached.cwd,
+                    command: cached.command,
+                    duration: cached.duration,
+                });
+            } else {
+                sendMessage(socket, {
+                    type: 'no_cache',
+                });
+            }
             break;
         }
 

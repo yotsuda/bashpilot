@@ -90,6 +90,41 @@ export async function startMcpServer() {
         }
     );
 
+    server.tool(
+        'wait_for_completion',
+        'Wait for busy console(s) to complete and retrieve cached output. Use this after a command times out to get the result when it finishes.',
+        {
+            timeout_seconds: z.coerce.number().optional().default(30).describe('Maximum seconds to wait (default: 30)')
+        },
+        async ({ timeout_seconds }) => {
+            try {
+                const results = await consoleManager.waitForCompletion(timeout_seconds * 1000);
+                if (results.length === 0) {
+                    return {
+                        content: [{ type: 'text', text: 'No completed results. Consoles may still be busy — try again later.' }]
+                    };
+                }
+
+                const parts = results.map(r => {
+                    const cwdInfo = r.cwd ? ` | Location: ${r.cwd}` : '';
+                    const statusLine = r.exitCode === 0
+                        ? `✓ ${r.displayName} | Status: Completed | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`
+                        : `✗ ${r.displayName} | Status: Failed (exit ${r.exitCode}) | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`;
+                    return `${statusLine}\n\n${r.output || '(no output)'}`;
+                });
+
+                return {
+                    content: [{ type: 'text', text: parts.join('\n\n---\n\n') }]
+                };
+            } catch (err) {
+                return {
+                    content: [{ type: 'text', text: `Error: ${err.message}` }],
+                    isError: true
+                };
+            }
+        }
+    );
+
     const transport = new StdioServerTransport();
     await server.connect(transport);
 
