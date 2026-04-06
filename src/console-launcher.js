@@ -23,23 +23,19 @@ export function launchConsole(proxyPid, agentId, options = {}) {
     if (options.title) args.push('--title', options.title);
 
     const platform = process.platform;
+    const cwd = options.cwd;
+    const title = options.title || 'bashpilot';
 
     if (platform === 'win32') {
-        return launchWindows(nodeCmd, args, options.cwd);
+        return launchWindows(nodeCmd, args, cwd, title);
     } else if (platform === 'darwin') {
-        return launchMacOS(nodeCmd, args, options.cwd);
+        return launchMacOS(nodeCmd, args, cwd);
     } else {
-        return launchLinux(nodeCmd, args, options.cwd);
+        return launchLinux(nodeCmd, args, cwd);
     }
 }
 
-function launchWindows(nodeCmd, args, cwd) {
-    // Use Windows Terminal (wt.exe) if available, otherwise conhost.
-    // Use cmd /c with a clean environment — cmd.exe inherits system defaults,
-    // not the MCP server's environment.
-    const cmdline = [nodeCmd, ...args].map(a => `"${a}"`).join(' ');
-
-    const title = options.title || 'bashpilot';
+function launchWindows(nodeCmd, args, cwd, title) {
 
     if (hasCommand('wt.exe')) {
         return spawn('wt.exe', ['--title', title, '--', nodeCmd, ...args], {

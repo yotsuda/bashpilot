@@ -142,9 +142,15 @@ export class CommandTracker {
         }
 
         // Remove trailing prompt line(s)
+        // Handles multi-line prompts like:
+        //   user@host MINGW64 ~/path
+        //   $
         while (cleanedLines.length > 0) {
             const last = cleanedLines[cleanedLines.length - 1].trim();
-            if (last === '' || last.endsWith('$') || last.endsWith('#')) {
+            if (last === '' || last === '$' || last === '#' ||
+                last.endsWith('$') || last.endsWith('#') ||
+                /MINGW|MSYS/.test(last) ||
+                /^\S+@\S+/.test(last)) {
                 cleanedLines.pop();
             } else {
                 break;

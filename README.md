@@ -29,8 +29,8 @@ graph TB
     end
 
     Client -- "stdio" --> MCP
-    CM -- "TCP localhost" --> C1
-    CM -- "TCP localhost" --> C2
+    CM -- "Unix socket / TCP" --> C1
+    CM -- "Unix socket / TCP" --> C2
     CM -. "auto-switch<br/>if busy" .-> C2
 ```
 
@@ -55,26 +55,28 @@ claude mcp add bashpilot -- bashpilot
 
 | Tool | Description |
 |------|-------------|
-| `start_console` | Open a visible bash terminal window. Reuses standby console if available. Pass `reason` to force a new one. |
-| `execute_command` | Run a command in the shared terminal. Output is visible to user in real time and returned via MCP. |
+| `start_console` | Open a visible bash terminal window. Returns system info (user, hostname, OS). Reuses standby console if available. Pass `reason` to force a new one. |
+| `execute_command` | Run a command in the shared terminal. Output is visible to user in real time and returned via MCP. If the active console is busy, auto-switches to a standby or launches a new one. |
 
 ## How It Works
 
 1. **MCP client starts bashpilot** via stdio (no manual terminal startup needed).
 
-2. **`start_console`** launches a visible terminal window running bash with shell integration. The window is named (e.g., "bashpilot — #9876 Falcon").
+2. **`start_console`** launches a visible terminal window running bash with shell integration. The window is named (e.g., "bashpilot — #9876 Falcon"). System info is returned in the response.
 
 3. **Shell integration**: A small script hooks into `PROMPT_COMMAND` and the `DEBUG` trap to emit OSC 633 markers for command lifecycle tracking.
 
-4. **`execute_command`** writes the command to the PTY. The user sees it in the terminal. Output is captured and returned via MCP. If the active console is busy, bashpilot automatically switches to a standby console or launches a new one.
+4. **`execute_command`** writes the command to the PTY. The user sees it in the terminal. Output is captured and returned via MCP. If the active console is busy, bashpilot automatically switches to a standby console or launches a new one (without executing — the client is asked to verify the directory and re-execute).
 
 5. **Dual streaming**: Output goes to the terminal (user sees it) AND is captured for the MCP response simultaneously.
+
+6. **Console discovery**: Each console listens on a Unix domain socket (or TCP with port file on Windows) with a naming convention that encodes ownership. The proxy discovers consoles by scanning the filesystem.
 
 ## Supported Platforms
 
 - Linux (native bash)
 - macOS (native bash / zsh with bash installed)
-- Windows (Git Bash via MSYS2, WSL)
+- Windows (Git Bash via MSYS2)
 
 ## Limitations
 
@@ -82,6 +84,7 @@ claude mcp add bashpilot -- bashpilot
 - Very long output (>1MB) is truncated
 - Interactive commands (vi, top, etc.) are not supported via MCP
 - The user must keep the terminal window(s) open
+- Characters typed during console startup may interfere with the first AI command
 
 ## License
 
