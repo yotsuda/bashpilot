@@ -61,10 +61,16 @@ export class ConsoleManager {
             const standby = await this._findStandbyConsole();
             if (standby) {
                 this._activePid = standby.consolePid;
+                const displayName = this._consoles.get(standby.consolePid)?.displayName || `#${standby.consolePid}`;
+                // Re-set title on reuse (may have changed)
+                await this._sendRequest(standby.socketPath, {
+                    type: 'set_title',
+                    title: `bashpilot — ${displayName}`,
+                }).catch(() => {});
                 return {
                     status: 'reused',
                     pid: standby.consolePid,
-                    displayName: this._consoles.get(standby.consolePid)?.displayName || `#${standby.consolePid}`,
+                    displayName,
                 };
             }
         }
@@ -137,11 +143,13 @@ export class ConsoleManager {
             }
 
             const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            const cachedOutputs = await this.collectAllCachedOutputs();
             return {
                 switched: true,
                 displayName,
                 output: `Console ${deadName} was closed. Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
                 exitCode: 0,
+                cachedOutputs,
             };
         } else if (status.status === 'busy') {
             this._busyPids.add(consolePid);
@@ -160,17 +168,20 @@ export class ConsoleManager {
 
             // Don't execute — notify caller of the switch
             const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            const cachedOutputs = await this.collectAllCachedOutputs();
 
             return {
                 switched: true,
                 displayName,
                 output: `Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
                 exitCode: 0,
+                cachedOutputs,
             };
         }
 
         // Send execute command
         this._busyPids.add(consolePid);
+        const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
         try {
             const response = await this._sendRequest(socketPath, {
                 type: 'execute',
@@ -185,7 +196,9 @@ export class ConsoleManager {
                 throw new Error(response.message);
             }
 
-            const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            // Collect cached outputs from other consoles
+            const cachedOutputs = await this.collectAllCachedOutputs();
+
             return {
                 output: response.output,
                 exitCode: response.exitCode,
@@ -193,8 +206,20 @@ export class ConsoleManager {
                 command: response.command,
                 displayName,
                 cwd: response.cwd,
+                cachedOutputs,
             };
         } catch (err) {
+            // Timeout — return structured info instead of bare error
+            if (err.message.includes('timed out')) {
+                // Collect cached outputs from OTHER consoles
+                const cachedOutputs = await this.collectAllCachedOutputs();
+                return {
+                    timedOut: true,
+                    displayName,
+                    command,
+                    cachedOutputs,
+                };
+            }
             this._busyPids.delete(consolePid);
             throw err;
         }

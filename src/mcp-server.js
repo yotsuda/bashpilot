@@ -47,14 +47,9 @@ export async function startMcpServer() {
                 const parts = [`${status}\n\n${JSON.stringify(info, null, 2)}`];
 
                 // Collect cached outputs from all consoles
-                const cached = await consoleManager.collectAllCachedOutputs();
-                for (const r of cached) {
-                    const cwdInfo = r.cwd ? ` | Location: ${r.cwd}` : '';
-                    const line = r.exitCode === 0
-                        ? `✓ ${r.displayName} | Status: Completed | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`
-                        : `✗ ${r.displayName} | Status: Failed (exit ${r.exitCode}) | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`;
-                    parts.push(`${line}\n\n${r.output || '(no output)'}`);
-                }
+                const cachedOutputs = await consoleManager.collectAllCachedOutputs();
+                const cached = formatCachedOutputs(cachedOutputs);
+                if (cached) parts.push(cached);
 
                 return {
                     content: [{ type: 'text', text: parts.join('\n\n---\n\n') }]
@@ -68,6 +63,17 @@ export async function startMcpServer() {
         }
     );
 
+    function formatCachedOutputs(cachedOutputs) {
+        if (!cachedOutputs || cachedOutputs.length === 0) return '';
+        return cachedOutputs.map(r => {
+            const cwdInfo = r.cwd ? ` | Location: ${r.cwd}` : '';
+            const line = r.exitCode === 0
+                ? `✓ ${r.displayName} | Status: Completed | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`
+                : `✗ ${r.displayName} | Status: Failed (exit ${r.exitCode}) | Pipeline: ${r.command} | Duration: ${r.duration}s${cwdInfo}`;
+            return `${line}\n\n${r.output || '(no output)'}`;
+        }).join('\n\n---\n\n');
+    }
+
     server.tool(
         'execute_command',
         'Execute a command in the shared bash terminal. The command and its output are visible to the user in real time. Session state (cwd, env vars, functions) persists across calls. Call start_console first if no console is open.',
@@ -78,19 +84,37 @@ export async function startMcpServer() {
         async ({ command, timeout_seconds }) => {
             try {
                 const result = await consoleManager.executeCommand(command, timeout_seconds * 1000);
-                if (result.switched) {
+                const cached = formatCachedOutputs(result.cachedOutputs);
+
+                if (result.timedOut) {
+                    const parts = [
+                        `⧗ ${result.displayName} | Status: Busy | Pipeline: ${result.command}`,
+                        `Use wait_for_completion tool to wait and retrieve the result.`,
+                    ];
+                    if (cached) parts.push(cached);
                     return {
-                        content: [{ type: 'text', text: result.output }],
+                        content: [{ type: 'text', text: parts.join('\n\n') }]
+                    };
+                }
+
+                if (result.switched) {
+                    const parts = [result.output];
+                    if (cached) parts.push(cached);
+                    return {
+                        content: [{ type: 'text', text: parts.join('\n\n---\n\n') }],
                         metadata: { switched: true, displayName: result.displayName }
                     };
                 }
+
                 const cwdInfo = result.cwd ? ` | Location: ${result.cwd}` : '';
                 const statusLine = result.exitCode === 0
                     ? `✓ ${result.displayName} | Status: Completed | Pipeline: ${result.command} | Duration: ${result.duration}s${cwdInfo}`
                     : `✗ ${result.displayName} | Status: Failed (exit ${result.exitCode}) | Pipeline: ${result.command} | Duration: ${result.duration}s${cwdInfo}`;
                 const output = result.output || '(no output)';
+                const parts = [`${statusLine}\n\n${output}`];
+                if (cached) parts.push(cached);
                 return {
-                    content: [{ type: 'text', text: `${statusLine}\n\n${output}` }],
+                    content: [{ type: 'text', text: parts.join('\n\n---\n\n') }],
                     metadata: { exitCode: result.exitCode }
                 };
             } catch (err) {
