@@ -107,14 +107,31 @@ export class PtyManager {
             throw new Error('PTY not started');
         }
 
-        // Register the command for tracking
+        // Append pwd with a marker so we can extract cwd from the output
+        const cwdMarker = '__BASHPILOT_CWD__';
+        const wrappedCommand = `${command}; echo ${cwdMarker}$(pwd)`;
+
+        // Register with the original command (for echo removal)
         const resultPromise = this.tracker.registerCommand(command, timeoutMs);
 
-        // Write command + newline to PTY (appears in terminal as if typed)
-        this._pty.write(command + '\n');
+        // Write wrapped command to PTY
+        this._pty.write(wrappedCommand + '\n');
 
-        // Wait for completion
-        return resultPromise;
+        // Wait for completion, then extract cwd from output
+        const result = await resultPromise;
+
+        let cwd = null;
+        const lines = result.output.split('\n');
+        const markerIdx = lines.findIndex(l => l.startsWith(cwdMarker));
+        if (markerIdx !== -1) {
+            cwd = lines[markerIdx].substring(cwdMarker.length).trim();
+            // Remove the marker line from output
+            lines.splice(markerIdx, 1);
+            result.output = lines.join('\n').trimEnd();
+        }
+        result.cwd = cwd;
+
+        return result;
     }
 
     /**

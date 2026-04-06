@@ -72,8 +72,13 @@ export async function startMcpServer() {
                         metadata: { switched: true, displayName: result.displayName }
                     };
                 }
+                const cwdInfo = result.cwd ? ` | Location: ${result.cwd}` : '';
+                const statusLine = result.exitCode === 0
+                    ? `✓ ${result.displayName} | Status: Completed | Pipeline: ${result.command} | Duration: ${result.duration}s${cwdInfo}`
+                    : `✗ ${result.displayName} | Status: Failed (exit ${result.exitCode}) | Pipeline: ${result.command} | Duration: ${result.duration}s${cwdInfo}`;
+                const output = result.output || '(no output)';
                 return {
-                    content: [{ type: 'text', text: result.output || '(no output)' }],
+                    content: [{ type: 'text', text: `${statusLine}\n\n${output}` }],
                     metadata: { exitCode: result.exitCode }
                 };
             } catch (err) {

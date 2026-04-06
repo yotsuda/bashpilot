@@ -102,19 +102,27 @@ async function handleMessage(msg, socket, pty) {
         }
 
         case 'execute': {
+            const startTime = Date.now();
             try {
                 const result = await pty.executeCommand(msg.command, msg.timeout || 30000);
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
                 sendMessage(socket, {
                     type: 'result',
                     id: msg.id,
                     output: result.output,
-                    exitCode: result.exitCode
+                    exitCode: result.exitCode,
+                    duration,
+                    command: msg.command,
+                    cwd: result.cwd,
                 });
             } catch (err) {
+                const duration = ((Date.now() - startTime) / 1000).toFixed(2);
                 sendMessage(socket, {
                     type: 'error',
                     id: msg.id,
-                    message: err.message
+                    message: err.message,
+                    duration,
+                    command: msg.command,
                 });
             }
             break;

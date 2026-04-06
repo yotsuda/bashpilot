@@ -170,7 +170,15 @@ export class ConsoleManager {
                 throw new Error(response.message);
             }
 
-            return { output: response.output, exitCode: response.exitCode };
+            const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            return {
+                output: response.output,
+                exitCode: response.exitCode,
+                duration: response.duration,
+                command: response.command,
+                displayName,
+                cwd: response.cwd,
+            };
         } catch (err) {
             this._busyPids.delete(consolePid);
             throw err;
