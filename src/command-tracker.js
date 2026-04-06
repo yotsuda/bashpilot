@@ -49,7 +49,12 @@ export class CommandTracker {
         return new Promise((resolve, reject) => {
             const timeoutId = setTimeout(() => {
                 if (this._pending) {
-                    this._cleanup();
+                    // Reject the caller's promise, but keep _isAiCommand = true
+                    // so get_status reports 'busy' until the shell signals completion.
+                    // The command is still running in the PTY.
+                    const { timeoutId: tid } = this._pending;
+                    clearTimeout(tid);
+                    this._pending = null;
                     reject(new Error(`Command timed out after ${timeoutMs}ms`));
                 }
             }, timeoutMs);
@@ -110,7 +115,11 @@ export class CommandTracker {
     }
 
     _resolve() {
-        if (!this._pending) return;
+        if (!this._pending) {
+            // Timed out earlier — just cleanup the busy state
+            this._cleanup();
+            return;
+        }
 
         const { resolve, timeoutId } = this._pending;
         clearTimeout(timeoutId);

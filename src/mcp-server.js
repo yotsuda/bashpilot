@@ -50,11 +50,17 @@ export async function startMcpServer() {
         'Execute a command in the shared bash terminal. The command and its output are visible to the user in real time. Session state (cwd, env vars, functions) persists across calls. Call start_console first if no console is open.',
         {
             command: z.string().describe('The bash command to execute'),
-            timeout_seconds: z.number().optional().default(30).describe('Timeout in seconds (default: 30)')
+            timeout_seconds: z.coerce.number().optional().default(30).describe('Timeout in seconds (default: 30)')
         },
         async ({ command, timeout_seconds }) => {
             try {
                 const result = await consoleManager.executeCommand(command, timeout_seconds * 1000);
+                if (result.switched) {
+                    return {
+                        content: [{ type: 'text', text: result.output }],
+                        metadata: { switched: true, cwd: result.cwd, displayName: result.displayName }
+                    };
+                }
                 return {
                     content: [{ type: 'text', text: result.output || '(no output)' }],
                     metadata: { exitCode: result.exitCode }

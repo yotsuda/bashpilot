@@ -77,6 +77,9 @@ export class ConsoleManager {
 
     /**
      * Execute a command on a console.
+     * If the active console is busy, switches to another and returns a
+     * 'switched' result instead of executing — the caller should verify
+     * the working directory and re-execute.
      */
     async executeCommand(command, timeoutMs = 30000) {
         // Fast path: check active console
@@ -114,6 +117,24 @@ export class ConsoleManager {
                 consolePid = result.pid;
                 socketPath = this._getSocketPath(consolePid);
             }
+
+            // Don't execute — notify caller of the switch
+            const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            const cwdResult = await this._sendRequest(socketPath, {
+                type: 'execute',
+                id: randomUUID(),
+                command: 'pwd',
+                timeout: 5000,
+            }, 8000).catch(() => null);
+            const cwd = cwdResult?.output?.trim() || '(unknown)';
+
+            return {
+                switched: true,
+                displayName,
+                cwd,
+                output: `Switched to console ${displayName}. Current directory: ${cwd}\nPipeline NOT executed — verify location and re-execute.`,
+                exitCode: 0,
+            };
         }
 
         // Send execute command
