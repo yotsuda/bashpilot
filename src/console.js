@@ -127,18 +127,21 @@ function revertToUnowned() {
     stopLivenessMonitor();
 
     const oldPath = _markerPath;
+    const oldServer = _server;
     _proxyPid = null;
     _agentId = 'default';
     _markerPath = getUnownedSocketPath(process.pid);
 
-    // Close old server and start new one on unowned socket
-    _server.close(() => {
+    // Create new server FIRST, then close old one
+    _server = createSocketServer();
+    _server.on('error', (err) => {
+        process.stderr.write(`\x1b[31m[bashpilot] Server error after revert: ${err.message}\x1b[0m\n`);
+    });
+    startListening(_server, _markerPath);
+
+    // Close old server and clean up old marker
+    oldServer.close(() => {
         cleanupSocket(oldPath);
-        _server = createSocketServer();
-        startListening(_server, _markerPath);
-        _server.on('error', (err) => {
-            process.stderr.write(`\x1b[31m[bashpilot] Server error after revert: ${err.message}\x1b[0m\n`);
-        });
     });
 
     // Update window title
@@ -150,6 +153,7 @@ function revertToUnowned() {
  */
 async function handleClaim(proxyPid, agentId, socket) {
     const oldPath = _markerPath;
+    const oldServer = _server;
     _proxyPid = proxyPid;
     _agentId = agentId || 'default';
     _markerPath = getSocketPath(_proxyPid, _agentId, process.pid);
@@ -157,17 +161,19 @@ async function handleClaim(proxyPid, agentId, socket) {
     // Respond before closing (may not arrive — fire-and-forget on proxy side)
     sendMessage(socket, { type: 'claimed', newPath: _markerPath });
 
-    // Close old server and start new one on owned socket
-    _server.close(() => {
-        cleanupSocket(oldPath);
-        _server = createSocketServer();
-        startListening(_server, _markerPath);
-        _server.on('error', (err) => {
-            process.stderr.write(`\x1b[31m[bashpilot] Server error after claim: ${err.message}\x1b[0m\n`);
-        });
+    // Create new server FIRST, then close old one
+    _server = createSocketServer();
+    _server.on('error', (err) => {
+        process.stderr.write(`\x1b[31m[bashpilot] Server error after claim: ${err.message}\x1b[0m\n`);
+    });
+    startListening(_server, _markerPath);
 
-        // Start monitoring proxy liveness
-        startLivenessMonitor();
+    // Start monitoring proxy liveness
+    startLivenessMonitor();
+
+    // Close old server and clean up old marker
+    oldServer.close(() => {
+        cleanupSocket(oldPath);
     });
 }
 
