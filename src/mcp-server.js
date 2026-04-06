@@ -11,10 +11,17 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { ConsoleManager } from './console-manager.js';
+import os from 'node:os';
 
 export async function startMcpServer() {
     const consoleManager = new ConsoleManager();
     await consoleManager.init();
+
+    const systemInfo = {
+        user: process.env.USER || process.env.USERNAME || '(unknown)',
+        hostname: os.hostname(),
+        os: `${os.type()} ${os.release()} ${os.arch()}`,
+    };
 
     const server = new McpServer({
         name: 'bashpilot',
@@ -32,10 +39,14 @@ export async function startMcpServer() {
         async ({ shell, cwd, reason }) => {
             try {
                 const result = await consoleManager.startConsole({ shell, cwd, reason });
-                const msg = result.status === 'reused'
+                const status = result.status === 'reused'
                     ? `Reusing standby console ${result.displayName} (PID ${result.pid}).`
                     : `Console ${result.displayName} opened (PID ${result.pid}).`;
-                return { content: [{ type: 'text', text: msg }] };
+
+                const info = { ...systemInfo, console: result.displayName };
+                return {
+                    content: [{ type: 'text', text: `${status}\n\n${JSON.stringify(info, null, 2)}` }]
+                };
             } catch (err) {
                 return {
                     content: [{ type: 'text', text: `Failed to start console: ${err.message}` }],
@@ -64,25 +75,6 @@ export async function startMcpServer() {
                 return {
                     content: [{ type: 'text', text: result.output || '(no output)' }],
                     metadata: { exitCode: result.exitCode }
-                };
-            } catch (err) {
-                return {
-                    content: [{ type: 'text', text: `Error: ${err.message}` }],
-                    isError: true
-                };
-            }
-        }
-    );
-
-    server.tool(
-        'get_session_info',
-        'Get current working directory, system info, and session details from the active bash console.',
-        {},
-        async () => {
-            try {
-                const location = await consoleManager.getSessionInfo();
-                return {
-                    content: [{ type: 'text', text: JSON.stringify(location, null, 2) }]
                 };
             } catch (err) {
                 return {

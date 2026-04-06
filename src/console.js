@@ -9,7 +9,6 @@
  */
 
 import net from 'node:net';
-import os from 'node:os';
 import { PtyManager } from './pty-manager.js';
 import { getSocketPath, cleanupSocket, writePortFile, usesTcp } from './socket-paths.js';
 
@@ -121,24 +120,11 @@ async function handleMessage(msg, socket, pty) {
             break;
         }
 
-        case 'get_location': {
-            sendMessage(socket, { type: 'location', location: getLocationInfo() });
-            break;
-        }
-
         case 'set_title': {
             pty.setTitle(msg.title);
             break;
         }
     }
-}
-
-function getLocationInfo() {
-    return {
-        user: process.env.USER || process.env.USERNAME || '(unknown)',
-        hostname: os.hostname(),
-        os: `${os.type()} ${os.release()} ${os.arch()}`,
-    };
 }
 
 function sendMessage(socket, obj) {
