@@ -202,7 +202,6 @@ export class PtyManager {
     setTitle(title) {
         if (this._pty) {
             const escaped = title.replace(/'/g, "'\\''");
-            // Set variable then erase the command line from display (no clear)
             this._pty.write(`__bashpilot_title='${escaped}'\n`);
             process.stdout.write(`\x1b]0;${title}\x07`);
         }
