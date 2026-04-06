@@ -1,11 +1,22 @@
 /**
- * File operation tools — Node.js native, not PTY-based.
- * Compatible with Claude Code's Read, Write, Edit, Grep, Glob tools.
+ * File operation tools — Node.js native, optimized for performance.
+ *
+ * Design principles (from PowerShell.MCP):
+ * - Single-pass processing wherever possible
+ * - Streaming for large files (no full file load for read/search)
+ * - Binary file detection and skip
+ * - Shared read access (don't fail on locked files)
+ * - Early termination when limits are reached
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { createReadStream } from 'node:fs';
+import { createInterface } from 'node:readline';
 import { z } from 'zod';
+
+const BINARY_CHECK_BYTES = 8192;
+const MAX_LINE_LENGTH = 10000; // Truncate extremely long lines in output
 
 /**
  * Register file tools on an McpServer instance.
@@ -24,16 +35,17 @@ export function registerFileTools(server) {
                 if (!fs.existsSync(filePath)) {
                     return error(`File not found: ${filePath}`);
                 }
-                const content = fs.readFileSync(filePath, 'utf8');
-                const lines = content.split('\n');
-                const selected = lines.slice(offset, offset + limit);
-                const numbered = selected.map((line, i) =>
-                    `${String(offset + i + 1).padStart(4)}: ${line}`
-                ).join('\n');
-                const info = lines.length > offset + limit
-                    ? `\n\n[Showing lines ${offset + 1}-${offset + selected.length} of ${lines.length}]`
-                    : '';
-                return ok(numbered + info);
+                const stat = fs.statSync(filePath);
+                if (stat.isDirectory()) {
+                    return error(`Path is a directory: ${filePath}`);
+                }
+                if (isBinaryFile(filePath)) {
+                    return error(`Binary file, cannot display: ${filePath}`);
+                }
+
+                // Stream line by line — skip offset lines, take limit lines
+                const result = await readLines(filePath, offset, limit);
+                return ok(result.output + result.info);
             } catch (err) {
                 return error(err.message);
             }
@@ -54,7 +66,7 @@ export function registerFileTools(server) {
                     fs.mkdirSync(dir, { recursive: true });
                 }
                 fs.writeFileSync(filePath, content, 'utf8');
-                const lines = content.split('\n').length;
+                const lines = countNewlines(content) + 1;
                 return ok(`Written ${lines} lines to ${filePath}`);
             } catch (err) {
                 return error(err.message);
@@ -75,15 +87,21 @@ export function registerFileTools(server) {
                 if (!fs.existsSync(filePath)) {
                     return error(`File not found: ${filePath}`);
                 }
+                // Single read, count + replace in one pass
                 const content = fs.readFileSync(filePath, 'utf8');
-                const count = content.split(old_string).length - 1;
-                if (count === 0) {
+                const firstIdx = content.indexOf(old_string);
+                if (firstIdx === -1) {
                     return error('old_string not found in file.');
                 }
-                if (count > 1) {
+                const secondIdx = content.indexOf(old_string, firstIdx + 1);
+                if (secondIdx !== -1) {
+                    const count = countOccurrences(content, old_string);
                     return error(`old_string found ${count} times. It must be unique. Add more context to make it unique.`);
                 }
-                const newContent = content.replace(old_string, new_string);
+                // Single replacement at known index (faster than String.replace)
+                const newContent = content.substring(0, firstIdx) +
+                    new_string +
+                    content.substring(firstIdx + old_string.length);
                 fs.writeFileSync(filePath, newContent, 'utf8');
                 return ok(`Replaced 1 occurrence in ${filePath}`);
             } catch (err) {
@@ -98,7 +116,7 @@ export function registerFileTools(server) {
         {
             pattern: z.string().describe('Regular expression pattern to search for'),
             path: z.string().optional().describe('Directory or file to search in (default: current directory)'),
-            glob: z.string().optional().describe('Glob pattern to filter files (e.g., "*.js", "**/*.ts")'),
+            glob: z.string().optional().describe('Glob pattern to filter files (e.g., "*.js", "*.ts")'),
             max_results: z.coerce.number().optional().default(50).describe('Maximum number of results'),
         },
         async ({ pattern, path: searchPath, glob: globPattern, max_results }) => {
@@ -108,15 +126,17 @@ export function registerFileTools(server) {
                 const results = [];
 
                 if (fs.statSync(basePath).isFile()) {
-                    searchInFile(basePath, regex, results, max_results);
+                    await searchInFileStreaming(basePath, regex, results, max_results);
                 } else {
-                    walkDir(basePath, regex, results, max_results, globPattern);
+                    await walkAndSearch(basePath, regex, results, max_results, globPattern);
                 }
 
                 if (results.length === 0) {
                     return ok('No matches found.');
                 }
-                return ok(results.join('\n'));
+                const truncated = results.length >= max_results
+                    ? `\n\n[Results limited to ${max_results}]` : '';
+                return ok(results.join('\n') + truncated);
             } catch (err) {
                 return error(err.message);
             }
@@ -134,7 +154,7 @@ export function registerFileTools(server) {
             try {
                 const dir = basePath || process.cwd();
                 const results = [];
-                findFiles(dir, pattern, results, 200);
+                findFilesRecursive(dir, pattern, results, 200);
                 if (results.length === 0) {
                     return ok('No files found.');
                 }
@@ -146,82 +166,180 @@ export function registerFileTools(server) {
     );
 }
 
-// --- Helpers ---
+// --- Streaming file reader ---
 
-function ok(text) {
-    return { content: [{ type: 'text', text }] };
-}
+async function readLines(filePath, offset, limit) {
+    return new Promise((resolve, reject) => {
+        const stream = createReadStream(filePath, {
+            encoding: 'utf8',
+            // Use shared read access (don't fail on locked files)
+            flags: 'r',
+        });
+        const rl = createInterface({ input: stream, crlfDelay: Infinity });
 
-function error(message) {
-    return { content: [{ type: 'text', text: `Error: ${message}` }], isError: true };
-}
+        const lines = [];
+        let lineNum = 0;
+        let totalLines = 0;
 
-function searchInFile(filePath, regex, results, maxResults) {
-    try {
-        const content = fs.readFileSync(filePath, 'utf8');
-        const lines = content.split('\n');
-        for (let i = 0; i < lines.length && results.length < maxResults; i++) {
-            if (regex.test(lines[i])) {
-                results.push(`${filePath}:${i + 1}: ${lines[i]}`);
+        rl.on('line', (line) => {
+            totalLines++;
+            if (lineNum >= offset && lines.length < limit) {
+                const display = line.length > MAX_LINE_LENGTH
+                    ? line.substring(0, MAX_LINE_LENGTH) + '...'
+                    : line;
+                lines.push(`${String(lineNum + 1).padStart(4)}: ${display}`);
             }
-        }
+            lineNum++;
+            if (lines.length >= limit) {
+                // Keep counting total lines but don't store more
+            }
+        });
+
+        rl.on('close', () => {
+            const output = lines.join('\n');
+            const info = totalLines > offset + limit
+                ? `\n\n[Showing lines ${offset + 1}-${offset + lines.length} of ${totalLines}]`
+                : '';
+            resolve({ output, info });
+        });
+
+        rl.on('error', reject);
+    });
+}
+
+// --- Streaming search ---
+
+async function searchInFileStreaming(filePath, regex, results, maxResults) {
+    if (isBinaryFile(filePath)) return;
+
+    return new Promise((resolve) => {
+        const stream = createReadStream(filePath, { encoding: 'utf8', flags: 'r' });
+        const rl = createInterface({ input: stream, crlfDelay: Infinity });
+        let lineNum = 0;
+
+        rl.on('line', (line) => {
+            lineNum++;
+            if (results.length >= maxResults) {
+                rl.close();
+                stream.destroy();
+                return;
+            }
+            if (regex.test(line)) {
+                const display = line.length > MAX_LINE_LENGTH
+                    ? line.substring(0, MAX_LINE_LENGTH) + '...'
+                    : line;
+                results.push(`${filePath}:${lineNum}: ${display}`);
+            }
+        });
+
+        rl.on('close', resolve);
+        rl.on('error', resolve); // Skip unreadable files
+    });
+}
+
+async function walkAndSearch(dir, regex, results, maxResults, globPattern) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-        // Skip unreadable files
+        return;
+    }
+
+    for (const entry of entries) {
+        if (results.length >= maxResults) return;
+
+        if (entry.isDirectory()) {
+            if (SKIP_DIRS.has(entry.name)) continue;
+            await walkAndSearch(path.join(dir, entry.name), regex, results, maxResults, globPattern);
+        } else if (entry.isFile()) {
+            if (globPattern && !matchGlob(entry.name, globPattern)) continue;
+            await searchInFileStreaming(path.join(dir, entry.name), regex, results, maxResults);
+        }
     }
 }
 
-function walkDir(dir, regex, results, maxResults, globPattern) {
-    try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            if (results.length >= maxResults) return;
-            const fullPath = path.join(dir, entry.name);
+// --- File finder ---
 
-            // Skip common non-content directories
-            if (entry.isDirectory()) {
-                if (['node_modules', '.git', '.hg', '.svn', '__pycache__', 'dist', 'build'].includes(entry.name)) continue;
-                walkDir(fullPath, regex, results, maxResults, globPattern);
-            } else if (entry.isFile()) {
-                if (globPattern && !matchGlob(entry.name, globPattern)) continue;
-                searchInFile(fullPath, regex, results, maxResults);
+function findFilesRecursive(dir, pattern, results, maxResults) {
+    let entries;
+    try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        if (results.length >= maxResults) return;
+        const fullPath = path.join(dir, entry.name);
+
+        if (entry.isDirectory()) {
+            if (SKIP_DIRS.has(entry.name)) continue;
+            findFilesRecursive(fullPath, pattern, results, maxResults);
+        } else if (entry.isFile()) {
+            if (matchGlob(entry.name, pattern) || matchGlob(fullPath, pattern)) {
+                results.push(fullPath);
             }
         }
-    } catch {
-        // Skip unreadable directories
     }
 }
 
-function findFiles(dir, pattern, results, maxResults) {
-    try {
-        const entries = fs.readdirSync(dir, { withFileTypes: true });
-        for (const entry of entries) {
-            if (results.length >= maxResults) return;
-            const fullPath = path.join(dir, entry.name);
+// --- Binary detection (single-pass, first N bytes) ---
 
-            if (entry.isDirectory()) {
-                if (['node_modules', '.git', '.hg', '.svn', '__pycache__', 'dist', 'build'].includes(entry.name)) continue;
-                findFiles(fullPath, pattern, results, maxResults);
-            } else if (entry.isFile()) {
-                if (matchGlob(entry.name, pattern) || matchGlob(fullPath, pattern)) {
-                    results.push(fullPath);
-                }
-            }
+function isBinaryFile(filePath) {
+    try {
+        const fd = fs.openSync(filePath, 'r');
+        const buf = Buffer.alloc(BINARY_CHECK_BYTES);
+        const bytesRead = fs.readSync(fd, buf, 0, BINARY_CHECK_BYTES, 0);
+        fs.closeSync(fd);
+
+        // Check for null bytes (strong binary indicator)
+        for (let i = 0; i < bytesRead; i++) {
+            if (buf[i] === 0) return true;
         }
+        return false;
     } catch {
-        // Skip unreadable directories
+        return false;
     }
+}
+
+// --- Utilities ---
+
+function countNewlines(str) {
+    let count = 0;
+    let idx = -1;
+    while ((idx = str.indexOf('\n', idx + 1)) !== -1) count++;
+    return count;
+}
+
+function countOccurrences(str, substr) {
+    let count = 0;
+    let idx = -1;
+    while ((idx = str.indexOf(substr, idx + 1)) !== -1) count++;
+    return count;
 }
 
 /**
- * Simple glob matching (supports * and **).
+ * Glob matching (supports *, **, ?).
+ * Compiled to regex once per call — no repeated compilation.
  */
 function matchGlob(str, pattern) {
-    const regex = pattern
-        .replace(/\./g, '\\.')
+    const regex = globToRegex(pattern);
+    return regex.test(str);
+}
+
+function globToRegex(pattern) {
+    const escaped = pattern
+        .replace(/[.+^${}()|[\]\\]/g, '\\$&')
         .replace(/\*\*/g, '§§')
         .replace(/\*/g, '[^/\\\\]*')
         .replace(/§§/g, '.*')
         .replace(/\?/g, '.');
-    return new RegExp(`^${regex}$`, 'i').test(str) ||
-           new RegExp(`(^|[\\/\\\\])${regex}$`, 'i').test(str);
+    return new RegExp(`(^|[\\/\\\\])${escaped}$`, 'i');
 }
+
+const SKIP_DIRS = new Set([
+    'node_modules', '.git', '.hg', '.svn', '__pycache__',
+    'dist', 'build', '.next', '.nuxt', 'coverage',
+    '.tox', '.venv', 'venv', '.mypy_cache', '.pytest_cache',
+    'target', 'bin', 'obj',
+]);
