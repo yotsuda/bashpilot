@@ -157,6 +157,19 @@ describe('file-tools', () => {
             assert.equal(fs.readFileSync(f, 'utf8'), 'replaced1\nreplaced2\nline3\n');
         });
 
+        it('replace_all replaces all occurrences', async () => {
+            const f = tmpFile('edit.txt', 'foo and foo and foo\n');
+            const result = await server.call('edit_file', {
+                path: f,
+                old_string: 'foo',
+                new_string: 'bar',
+                replace_all: true,
+            });
+            assert.ok(!result.isError);
+            assert.ok(result.content[0].text.includes('3 occurrences'));
+            assert.equal(fs.readFileSync(f, 'utf8'), 'bar and bar and bar\n');
+        });
+
         it('returns error for missing file', async () => {
             const result = await server.call('edit_file', {
                 path: '/nonexistent.txt',

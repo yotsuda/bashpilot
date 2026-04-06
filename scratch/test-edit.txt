@@ -1,0 +1,5 @@
+Hello World
+This is line 2
+This is line 3
+foo REPLACED baz
+The end

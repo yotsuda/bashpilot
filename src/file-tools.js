@@ -76,29 +76,47 @@ export function registerFileTools(server) {
 
     server.tool(
         'edit_file',
-        'Edit a file by replacing an exact string with a new string. The old_string must be unique in the file.',
+        'Edit a file by replacing an exact string with a new string. By default old_string must be unique. Use replace_all to replace all occurrences.',
         {
             path: z.string().describe('Absolute path to the file'),
             old_string: z.string().describe('Exact string to find and replace'),
             new_string: z.string().describe('Replacement string'),
+            replace_all: z.boolean().optional().default(false).describe('Replace all occurrences (default: false, requires unique match)'),
         },
-        async ({ path: filePath, old_string, new_string }) => {
+        async ({ path: filePath, old_string, new_string, replace_all }) => {
             try {
                 if (!fs.existsSync(filePath)) {
                     return error(`File not found: ${filePath}`);
                 }
-                // Single read, count + replace in one pass
                 const content = fs.readFileSync(filePath, 'utf8');
                 const firstIdx = content.indexOf(old_string);
                 if (firstIdx === -1) {
                     return error('old_string not found in file.');
                 }
+
+                if (replace_all) {
+                    // Replace all occurrences via indexOf loop (no regex overhead)
+                    let newContent = '';
+                    let lastEnd = 0;
+                    let idx = firstIdx;
+                    let count = 0;
+                    while (idx !== -1) {
+                        newContent += content.substring(lastEnd, idx) + new_string;
+                        lastEnd = idx + old_string.length;
+                        count++;
+                        idx = content.indexOf(old_string, lastEnd);
+                    }
+                    newContent += content.substring(lastEnd);
+                    fs.writeFileSync(filePath, newContent, 'utf8');
+                    return ok(`Replaced ${count} occurrence${count > 1 ? 's' : ''} in ${filePath}`);
+                }
+
+                // Single replacement: must be unique
                 const secondIdx = content.indexOf(old_string, firstIdx + 1);
                 if (secondIdx !== -1) {
                     const count = countOccurrences(content, old_string);
-                    return error(`old_string found ${count} times. It must be unique. Add more context to make it unique.`);
+                    return error(`old_string found ${count} times. It must be unique. Add more context or use replace_all.`);
                 }
-                // Single replacement at known index (faster than String.replace)
                 const newContent = content.substring(0, firstIdx) +
                     new_string +
                     content.substring(firstIdx + old_string.length);
