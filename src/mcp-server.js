@@ -26,7 +26,7 @@ export async function startMcpServer() {
 
     const server = new McpServer({
         name: 'bash',
-        version: '0.2.1',
+        version: '0.3.0',
     });
 
     server.tool(

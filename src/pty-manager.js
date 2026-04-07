@@ -30,6 +30,10 @@ export class PtyManager {
         this._inputEnabled = false;
     }
 
+    get ready() {
+        return this._readyFired;
+    }
+
     /**
      * Start the PTY and begin forwarding I/O.
      */
@@ -195,9 +199,8 @@ export class PtyManager {
 
     /**
      * Set the terminal window title.
-     * Sets __bashpilot_title which gets injected into PS1 by shell integration.
-     * Clears the screen to hide the variable assignment from the user.
-     * Also writes OSC directly for immediate effect.
+     * Sets __bashpilot_title variable which gets injected into PS1 by shell
+     * integration, running AFTER MSYS/Git Bash's built-in title setting.
      */
     setTitle(title) {
         if (this._pty) {

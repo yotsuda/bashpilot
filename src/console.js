@@ -206,9 +206,15 @@ async function handleMessage(msg, socket, pty) {
         case 'get_status': {
             const busy = pty.tracker.busy;
             const hasCached = pty.tracker.hasCachedOutput;
+            const ready = pty.ready;
+            let status;
+            if (!ready) status = 'initializing';
+            else if (hasCached) status = 'completed';
+            else if (busy) status = 'busy';
+            else status = 'standby';
             sendMessage(socket, {
                 type: 'status',
-                status: hasCached ? 'completed' : (busy ? 'busy' : 'standby'),
+                status,
                 pid: process.pid,
                 owned: !!_proxyPid,
             });

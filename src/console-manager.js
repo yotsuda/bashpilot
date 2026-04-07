@@ -22,6 +22,7 @@ export class ConsoleManager {
         this._activePid = null;
         this._busyPids = new Set();
         this._consoles = new Map();  // consolePid → { socketPath, displayName }
+        this._lock = Promise.resolve();  // Serializes startConsole/executeCommand
     }
 
     get hasConsole() {
@@ -51,9 +52,23 @@ export class ConsoleManager {
     }
 
     /**
+     * Serialize an async operation through the lock.
+     */
+    _serialize(fn) {
+        const prev = this._lock;
+        let resolve;
+        this._lock = new Promise(r => { resolve = r; });
+        return prev.then(() => fn().finally(resolve));
+    }
+
+    /**
      * Start or reuse a console.
      */
     async startConsole(options = {}) {
+        return this._serialize(() => this._startConsoleImpl(options));
+    }
+
+    async _startConsoleImpl(options = {}) {
         const forceNew = !!options.reason;
 
         if (!forceNew) {
@@ -113,6 +128,10 @@ export class ConsoleManager {
      * the working directory and re-execute.
      */
     async executeCommand(command, timeoutMs = 30000) {
+        return this._serialize(() => this._executeCommandImpl(command, timeoutMs));
+    }
+
+    async _executeCommandImpl(command, timeoutMs = 30000) {
         // Fast path: check active console
         let consolePid = this._activePid;
         let socketPath = this._getSocketPath(consolePid);
@@ -427,9 +446,9 @@ export class ConsoleManager {
             for (const socketPath of sockets) {
                 const parsed = parseSocketPath(socketPath);
                 if (parsed && !knownPids.has(parsed.consolePid)) {
-                    // New socket found — verify it's responsive
+                    // New socket found — wait until shell integration is ready (standby)
                     const status = await this._getStatus(socketPath);
-                    if (status) return socketPath;
+                    if (status && status.status === 'standby') return socketPath;
                 }
             }
             await sleep(200);
