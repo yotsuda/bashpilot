@@ -57,16 +57,16 @@ graph TB
 ### Register with Claude Code
 
 ```bash
-claude mcp add bashpilot -- npx bashpilot
+claude mcp add bash -- npx bashpilot
 ```
 
-That's it. Claude Code will start bashpilot automatically. When AI calls `start_console`, a terminal window opens.
+That's it. Claude Code will start bashpilot automatically as the `bash` MCP server. When AI calls `start_console`, a terminal window opens.
 
 ### Or install globally
 
 ```bash
 npm install -g bashpilot
-claude mcp add bashpilot -- bashpilot
+claude mcp add bash -- bashpilot
 ```
 
 ### Claude Desktop
@@ -76,7 +76,7 @@ Add to your config file (`%APPDATA%\Claude\claude_desktop_config.json` on Window
 ```json
 {
   "mcpServers": {
-    "bashpilot": {
+    "bash": {
       "command": "npx",
       "args": ["bashpilot"]
     }
