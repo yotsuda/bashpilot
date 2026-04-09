@@ -1,5 +1,12 @@
 # bashpilot
 
+> [!IMPORTANT]
+> **This project has been superseded by [splashshell](https://github.com/yotsuda/splashshell).**
+>
+> splashshell is a multi-shell successor that supports bash, pwsh, powershell, and cmd in a unified ConPTY-based architecture, with cwd tracking, multi-console management, and console re-claim across MCP client restarts. The bashpilot package is no longer maintained.
+>
+> Install: `npm install -g splashshell`
+
 Shared console MCP server for bash. AI and user work in the same terminal session.
 
 <div align="center">
