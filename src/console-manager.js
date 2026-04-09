@@ -150,10 +150,36 @@ export class ConsoleManager {
             };
         }
 
+        // Quick liveness check before socket communication
+        if (!isProcessAlive(consolePid)) {
+            const deadName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            this._removeConsole(consolePid);
+            cleanupSocket(socketPath);
+            const standby = await this._findStandbyConsole();
+            if (standby) {
+                consolePid = standby.consolePid;
+                socketPath = standby.socketPath;
+                this._activePid = consolePid;
+            } else {
+                const result = await this._startConsoleImpl({});
+                consolePid = result.pid;
+                socketPath = this._getSocketPath(consolePid);
+            }
+            const displayName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
+            const cachedOutputs = await this.collectAllCachedOutputs();
+            return {
+                switched: true,
+                displayName,
+                output: `Console ${deadName} was closed. Switched to console ${displayName}. Pipeline NOT executed — cd to the correct directory and re-execute.`,
+                exitCode: 0,
+                cachedOutputs,
+            };
+        }
+
         // Check if active console is ready
         const status = await this._getStatus(socketPath);
         if (!status) {
-            // Dead console — clean up, find or launch another
+            // Dead socket but process check passed — clean up, find or launch another
             const deadName = this._consoles.get(consolePid)?.displayName || `#${consolePid}`;
             this._removeConsole(consolePid);
             const standby = await this._findStandbyConsole();
