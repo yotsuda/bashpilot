@@ -7,7 +7,7 @@ on:
     branches: [master]
 
 jobs:
-  test:
+  unit-test:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
@@ -26,5 +26,46 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run tests
+      - name: Run unit tests
         run: npm test
+
+  integration-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        node: [18, 22]
+      fail-fast: false
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Install xvfb and xterm (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb xterm
+
+      - name: Run integration test (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          xvfb-run --auto-servernum bash -c '
+            cat test/integration/mcp-test.jsonl | timeout 60 node src/index.js > /tmp/output.jsonl 2>/tmp/bp.err
+            echo "=== stderr ==="
+            cat /tmp/bp.err || true
+          '
+          node test/integration/verify.js /tmp/output.jsonl
+
+      - name: Run integration test (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cat test/integration/mcp-test.jsonl | gtimeout 60 node src/index.js > /tmp/output.jsonl 2>/tmp/bp.err || true
+          echo "=== stderr ==="
+          cat /tmp/bp.err || true
+          node test/integration/verify.js /tmp/output.jsonl
